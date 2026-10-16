@@ -100,7 +100,7 @@ with sync_playwright() as p:
   page.locator('#workbenchSearch').fill('QA-Werkbanknotiz');page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===1")
   page.locator('#workbenchTaskTitle').fill('QA-Werkbankaufgabe');page.locator('#workbenchTaskArea').fill('QA');page.locator('#workbenchTaskForm button[type=submit]').click()
   page.wait_for_function("document.querySelector('#workbenchTaskTitle').value === ''",timeout=8000)
-  page.locator('#workbenchTasks').get_by_text('QA-Werkbankaufgabe',exact=True).wait_for(timeout=8000);assert page.locator('#workbenchMetrics .dashboard-metric').count()==5
+  page.locator('#workbenchTasks .task-row').filter(has_text='QA-Werkbankaufgabe').wait_for(timeout=8000);assert page.locator('#workbenchMetrics .dashboard-metric').count()==5
   page.locator('#workbenchTasks [data-workbench-done]').click();page.wait_for_function("!document.querySelector('#workbenchTasks').innerText.includes('QA-Werkbankaufgabe')")
   page.once('dialog',lambda dialog: dialog.accept());page.locator('#workbenchNotes [data-workbench-delete]').click();page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===0")
   page.locator('#workbenchView [data-workbench-open=archive]').click();page.wait_for_function("document.querySelector('#moduleTitle').textContent==='Archiv'")
