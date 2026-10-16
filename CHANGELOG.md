@@ -8,7 +8,7 @@
 - Den Release-Workflow für portable Qualitäts- und Browser-Prüfungen sowie nativen Arch-Paketbau einschließlich isoliertem Paket-Installationstest eingerichtet. Der Workflow erzeugt CI-Artefakte, aber keine automatischen Releases oder Tags.
 - Eine temporäre Transfer-Workflow-Datei nach erfolgreicher Wiederherstellung wieder entfernt; die normale Release-Pipeline bleibt erhalten.
 - 29 Kern-API-Tests, Quick-CI und den isolierten Benutzer-Installationstest erfolgreich ausgeführt. Offline-Weltkarte und SHA-256-Prüfsumme bestätigt.
-- Den nativen Arch-Paketbau und seinen isolierten Integrationstest in GitHub Actions erfolgreich ausgeführt; den portablen Full-Gate-Status bitte im [neuesten Actions-Lauf](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0) bestätigen.
+- Der vollständige portable Release-Gate einschließlich Browser-Prüfungen und Artefakt-Upload sowie der native Arch-Paketbau samt isoliertem Installationstest bestanden für Commit `6cfa3450` ([GitHub Actions](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/38965869764)).
 - Die alten Screenshots als Archiv-Fallbacks dokumentiert, damit sie nicht versehentlich als aktuelle Browser-Testresultate ausgegeben werden.
 - `main` wurde durch diese Transfer-Bereinigung nicht direkt verändert.
 

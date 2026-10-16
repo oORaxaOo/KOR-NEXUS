@@ -11,7 +11,7 @@ Stand: 2026-10-16 · Version 1.20.0 · Schwerpunkt: Repository-Wiederherstellung
 - [x] 29/29 Kern-API-Tests, Quick-CI, isolierte Benutzerinstallation, Start/Health/Doppelstart/Stop/Deinstallation und Erhalt der Nutzerdaten erfolgreich durchlaufen.
 - [x] Offline-Weltkarte überprüft: 177 GeoJSON-Features, 364.876 Byte und verifizierte SHA-256-Prüfsumme.
 - [x] Der native Arch-Paketbau einschließlich isoliertem Installationstest wurde in GitHub Actions erfolgreich abgeschlossen: [Workflow-Lauf](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/38965584870).
-- [ ] Den vollständigen portablen Release-Gate für den neuesten Commit anhand des neuesten Actions-Laufs abschließend bestätigen: [aktuelle Läufe](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0).
+- [x] Vollständiger portabler Release-Gate, Browser-Prüfungen, Artefakt-Upload und nativer Arch-Paketbau samt isoliertem Installationstest für Commit `6cfa3450` bestanden ([GitHub Actions](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/38965869764)).
 - [x] Die Änderungen dieser Übertragungsrunde blieben auf `transfer/kor-nexus-1.20.0`; `main` wurde nicht direkt geändert.
 - [x] Keine automatische Veröffentlichung, Tag-Erstellung oder Installation auf dem persönlichen NyarchLinux-System.
 
