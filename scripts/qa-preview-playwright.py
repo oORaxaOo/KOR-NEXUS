@@ -176,12 +176,12 @@ with sync_playwright() as p:
   page.locator('#createBackup').click();page.wait_for_function("document.querySelectorAll('#backupList .backup-row').length>0",timeout=3000)
   assert page.locator('#backupList .backup-row').count()==1;page.locator('#closeSettings').click()
   print('PASS: DE/EN, anpassbare Personenbezeichnungen, Einstellungen und Sicherungsdialog')
-  page.set_viewport_size({'width':390,'height':844});assert page.locator('#pageTitle').is_visible();assert page.locator('#nav button').count()==7
+  page.set_viewport_size({'width':390,'height':844});assert page.locator('#pageTitle').is_visible();assert page.locator('#nav button').count()==8
   print('PASS: schmale Mobilansicht bleibt bedienbar')
   SCREENSHOT.parent.mkdir(parents=True,exist_ok=True)
   clean=browser.new_page(viewport={'width':1440,'height':1000});clean.set_content(html,wait_until='domcontentloaded',timeout=10000);clean.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
   design=clean.evaluate("({bg:getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),red:getComputedStyle(document.documentElement).getPropertyValue('--red').trim(),focus:!!document.querySelector(':focus-visible'),reducedMotion:!![...document.styleSheets].length,nav:document.querySelectorAll('#nav button').length})")
-  assert design['bg']=='#0b0d0f' and design['red']=='#d34a4e',design
+  assert design['bg']=='#08090c' and design['red']=='#e1263e',design
   assert clean.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()")=='#d8b56c'
   assert clean.evaluate("getComputedStyle(document.querySelector('.topbar')).position")=='sticky'
   assert clean.evaluate("getComputedStyle(document.querySelector('.nav button.active'),'::after').getPropertyValue('background-color')") in ('rgb(216, 181, 108)','rgba(216, 181, 108, 1)')
@@ -191,7 +191,7 @@ with sync_playwright() as p:
   assert 'KOR NEXUS // command citadel redesign' in css_text
   assert '@media (max-width: 720px)' in css_text or '@media(max-width:720px)' in css_text
   assert clean.locator('.page-head:after').count()==0 or True
-  assert clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-color')") in ('rgb(211, 74, 78)','rgba(211, 74, 78, 1)')
+  assert 'linear-gradient' in clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-image')")
   assert clean.evaluate("getComputedStyle(document.querySelector('.panel-head'),'::before').getPropertyValue('width')")=='2px'
   assert '--grid-line' in clean.locator('html').get_attribute('style') if clean.locator('html').get_attribute('style') else True
   assert design['nav']==8,design
