@@ -16,7 +16,6 @@ concurrency:
 
 jobs:
   verify-transfer:
-    if: ${{ hashFiles('.github/workflows/repository-transfer.yml') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout transfer branch
@@ -25,12 +24,24 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
+      - name: Guard against repeat execution after bootstrap removal
+        id: guard
+        shell: bash
+        run: |
+          if [[ -f .github/workflows/repository-transfer.yml ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python
+        if: steps.guard.outputs.active == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Recover and verify the exact 1.20.0 file set
+        if: steps.guard.outputs.active == 'true'
         id: recover
         shell: bash
         run: |
@@ -172,7 +183,7 @@ jobs:
           PY
 
       - name: Report incomplete archive recovery
-        if: steps.recover.outputs.recovered == 'false'
+        if: steps.guard.outputs.active == 'true' && steps.recover.outputs.recovered == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -183,7 +194,7 @@ jobs:
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Install exact recovered project and organize old uploads
-        if: steps.recover.outputs.recovered == 'true'
+        if: steps.guard.outputs.active == 'true' && steps.recover.outputs.recovered == 'true'
         shell: bash
         run: |
           set -euo pipefail
