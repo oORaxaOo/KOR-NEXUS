@@ -435,6 +435,7 @@ def validate_portable_import(payload):
         if not key or key in news_ids: raise ValueError('News-Cache enthält doppelte oder leere IDs.')
         news_ids.add(key)
         if len(str(item['title']))>1000 or len(str(item['url']))>10000: raise ValueError('News-Eintrag überschreitet Feldgrenzen.')
+        if not _safe_http_url(str(item['url'])): raise ValueError('News-Eintrag enthält keine gültige HTTP(S)-Adresse.')
     source_ids=set()
     for item in news.get('sources',[]):
         if not isinstance(item,dict) or any(k not in item or item[k] is None for k in ('source_key','source_name')): raise ValueError('News-Quellenstatus ist unvollständig.')
