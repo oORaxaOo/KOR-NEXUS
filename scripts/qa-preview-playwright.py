@@ -13,6 +13,8 @@ HTML_SOURCE=ROOT/'web/index.html';CSS_SOURCE=ROOT/'web/styles.css';JS_SOURCE=ROO
 DESKTOP_SHOT=ROOT/'preview'/'hud-redesign-desktop.png'
 MOBILE_SHOT=ROOT/'preview'/'hud-redesign-mobile.png'
 html=HTML_SOURCE.read_text(encoding='utf-8');css=CSS_SOURCE.read_text(encoding='utf-8');js=JS_SOURCE.read_text(encoding='utf-8')
+assert js.count('async function loadGeographicData()')==1, 'Geodaten-Lader darf nur einmal definiert sein'
+assert 'function mercatorY(lat)' in js and 'Math.atan(Math.sinh(y))' in js, 'Mercator-Projektion und inverse Koordinatenumrechnung müssen vorhanden sein'
 html=html.replace('<link rel="stylesheet" href="./styles.css">',f'<style>\n{css}\n</style>',1)
 html=html.replace('<script src="./app.js" defer></script>','<!-- API mock is installed before the application script for isolated UI tests -->',1)
 mock=r'''<script>
@@ -33,7 +35,7 @@ window.fetch=async (input,init={})=>{
  if(path==='/tasks'&&method==='POST'){const item={id:__state.nextTask++,title:body.title,area:body.area||'SYSTEM',done:false,created_at:now(),updated_at:now()};__state.tasks.push(item);return res({item},201)}
  let m=path.match(/^\/tasks\/(\d+)$/);if(m&&method==='PATCH'){const item=__state.tasks.find(x=>x.id===+m[1]);if(!item)return res({error:'Aufgabe nicht gefunden'},404);Object.assign(item,body,{updated_at:now()});return res({item})}if(m&&method==='DELETE'){__state.tasks=__state.tasks.filter(x=>x.id!==+m[1]);return res({ok:true})}
  if(path==='/records'&&method==='GET'){const module=u.searchParams.get('module');return res({items:__state.records.filter(r=>r.module===module).sort((a,b)=>b.id-a.id).map(rec)})}
- if(path==='/locations'&&method==='GET')return res({items:__state.locations.map(x=>({...x,project_title:__state.records.find(r=>r.id===x.project_id)?.title||null})),projection:'equirectangular-marker-overlay',offline:true});
+ if(path==='/locations'&&method==='GET')return res({items:__state.locations.map(x=>({...x,project_title:__state.records.find(r=>r.id===x.project_id)?.title||null})),projection:'mercator-marker-overlay',offline:true});
  if(path==='/locations'&&method==='POST'){const item={id:__state.nextLocation++,...body,created_at:now(),updated_at:now()};__state.locations.push(item);return res({item},201)}
  m=path.match(/^\/locations\/(\d+)$/);if(m&&method==='PATCH'){const item=__state.locations.find(x=>x.id===+m[1]);if(!item)return res({error:'Standort nicht gefunden'},404);Object.assign(item,body,{updated_at:now()});return res({item})}if(m&&method==='DELETE'){__state.locations=__state.locations.filter(x=>x.id!==+m[1]);return res({ok:true})}
  if(path==='/records'&&method==='POST'){const item={id:__state.nextRecord++,...body,tags:body.tags||[],created_at:now(),updated_at:now()};__state.records.push(item);return res({item},201)}
