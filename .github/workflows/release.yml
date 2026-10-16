@@ -1,0 +1,92 @@
+name: KOR-NEXUS Release Gates
+
+on:
+  push:
+    branches: [main, master, "transfer/**"]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Portable quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser-test dependency
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Run complete portable release gates
+        run: bash scripts/ci.sh full
+      - name: Upload source archive and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: kor-nexus-source-${{ github.sha }}
+          path: |
+            kor-workstation-*.tar.gz
+            SOURCE_SHA256SUMS.txt
+            PKGBUILD
+          if-no-files-found: error
+          retention-days: 30
+
+  arch-package:
+    name: Native Arch Linux package build
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Fail-fast shell defaults
+        run: echo 'CI steps use GitHub Actions fail-fast semantics; shell scripts use set -euo pipefail.'
+      - name: Install CI runtime and package dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git python nodejs npm
+          useradd --create-home --shell /bin/bash builder
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: project
+      - name: Build and verify package as unprivileged user
+        working-directory: project
+        run: |
+          chown -R builder:builder .
+          su builder -s /bin/bash -c 'python scripts/create-source-archive.py'
+          su builder -s /bin/bash -c 'bash scripts/release-check.sh quick'
+          # A clean output directory prevents accidentally verifying a stale package.
+          find . -maxdepth 1 -type f -name '*.pkg.tar.*' -delete
+          su builder -s /bin/bash -c 'makepkg --cleanbuild --force --noconfirm'
+          mapfile -t PACKAGES < <(find . -maxdepth 1 -type f -name '*.pkg.tar.*' -printf '%f\n' | sort)
+          test "${#PACKAGES[@]}" -eq 1 || { echo 'Expected exactly one package artifact' >&2; exit 1; }
+          PACKAGE="${PACKAGES[0]}"
+          test -s "$PACKAGE"
+          su builder -s /bin/bash -c "python scripts/verify-built-package.py '$PACKAGE'"
+          # Print and retain the verified package file list in CI logs.
+          pacman -Qp --info "$PACKAGE"
+          pacman -Qp --list "$PACKAGE"
+      - name: Install-test package in disposable Arch container
+        working-directory: project
+        run: |
+          set -euo pipefail
+          mapfile -t PACKAGES < <(find . -maxdepth 1 -type f -name '*.pkg.tar.*' -printf '%f\n' | sort)
+          test "${#PACKAGES[@]}" -eq 1
+          timeout --signal=TERM --kill-after=10s 8m bash scripts/test-built-package-installation.sh "${PACKAGES[0]}"
+      - name: Upload native Arch package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kor-nexus-arch-package-${{ github.sha }}
+          path: project/*.pkg.tar.*
+          if-no-files-found: error
+          retention-days: 30
