@@ -243,6 +243,9 @@ jobs:
           }
           for rel in sorted(p for p in stage.rglob("*") if p.is_file()):
               name = rel.relative_to(stage).as_posix()
+              # GitHub's Actions token cannot create workflow files; add release.yml via the direct connector afterward.
+              if name == ".github/workflows/release.yml":
+                  continue
               dest = root / name
               dest.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(rel, dest)
@@ -295,17 +298,7 @@ jobs:
           .env.*
           !.env.example
           EOF
-          python - <<'PY'
-          from pathlib import Path
-          p=Path(".github/workflows/release.yml")
-          s=p.read_text(encoding="utf-8")
-          s=s.replace("branches: [main, master]", 'branches: [main, master, "transfer/**"]')
-          s=s.replace("          printf 'builder ALL=(ALL:ALL) NOPASSWD: ALL\\n' > /etc/sudoers.d/ci-builder\n          chmod 0440 /etc/sudoers.d/ci-builder\n", "")
-          if "NOPASSWD: ALL" in s:
-              raise SystemExit("Unrestricted sudo rule remains in release workflow")
-          p.write_text(s, encoding="utf-8")
-          PY
-          rm -f .github/workflows/repository-transfer.yml
+          # Do not change workflow files in the Actions-token commit; finish this one-time bootstrap with the direct GitHub connector.
           python -m compileall -q core scripts
           python -m unittest -v core.test_server
           bash scripts/ci.sh quick
