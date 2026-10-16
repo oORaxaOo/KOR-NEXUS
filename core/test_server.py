@@ -392,6 +392,18 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(status,200); self.assertEqual(settings['settings']['unit_label_plural'],'Mitglieder')
         self.assertEqual(self.req('/api/settings','PATCH',{'unit_label_plural':''})[0],400)
 
+    def test_resource_and_assignment_quantities_reject_non_finite_values(self):
+        _,project=self.req('/api/records','POST',{'module':'projects','title':'Mengenvalidierung'})
+        _,unit=self.req('/api/units','POST',{'name':'Testmitglied'})
+        for value in (float('nan'),float('inf'),float('-inf')):
+            status,_=self.req('/api/resources','POST',{'name':'Ungültige Menge','quantity':value})
+            self.assertEqual(status,400, f'Resource quantity {value!r} must be rejected as client input')
+            status,_=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'unit_id':unit['item']['id'],'quantity':value})
+            self.assertEqual(status,400, f'Assignment quantity {value!r} must be rejected as client input')
+        with app.db_connect() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM resources WHERE name='Ungültige Menge'").fetchone()[0],0)
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM project_assignments').fetchone()[0],0)
+
     def test_project_dashboard_joins_by_id_filters_and_persists(self):
         _,project=self.req('/api/records','POST',{'module':'projects','title':'Doppelname','region':'Nord'})
         pid=project['item']['id']
