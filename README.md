@@ -1,24 +1,33 @@
-## Release 1.20.0 — Repository identifiziert, Remote-CI weiterhin offen
-
-Das KOR-NEXUS-Repository wurde eindeutig als [`oORaxaOo/KOR-NEXUS`](https://github.com/oORaxaOo/KOR-NEXUS) identifiziert. Der GitHub-Connector meldet den Standardbranch `main` sowie Admin-/Push-Berechtigungen der verbundenen Identität. Das Remote-Repository enthält derzeit nur einen kurzen Platzhalter-README; `.github/workflows/release.yml` fehlt im Remote-Branch (404). Die lokale Arbeitskopie besitzt kein `.git`-Verzeichnis und keinen Remote. Es wurden keine Commits, Pushes, Workflow-Dispatches oder Veröffentlichungen ausgeführt. Ein Remote-CI-Lauf ist nicht bestätigt; der native Arch-Paketbau bleibt offen.
-
-Lokale Release-Gates und Tests wurden für 1.20.0 erneut ausgeführt. Die 29 Kern-API-Tests, 19 Browser-Prüfungen und der isolierte Benutzer-Installationstest bestanden; der Quick-Release-Check ist erfolgreich. Offline-Geodaten und bestehende Funktionen bleiben enthalten. Ein kombinierter Full-Check überschritt einmal das Zeitlimit; die Testgruppen wurden anschließend einzeln erfolgreich ausgeführt.
-
-## Release 1.19.0 — Repository-Zuordnung geprüft, CI weiterhin offen
-
-Die verfügbaren GitHub-Connector-Repositories und gezielte Suchen wurden geprüft. Die zwei sichtbaren privaten Repositories `oORaxaOo/test` und `oORaxaOo/myvirtualassistant` enthalten den erwarteten Workflow-Pfad nicht; Suchanfragen nach `KOR-NEXUS` und `kor nexus` lieferten keinen Treffer. Die lokale Projektkopie besitzt kein `.git` und keinen Remote. Ohne kanonische Repository-URL oder exakten Repository-Namen wurde kein Workflow gestartet, nichts gepusht und nichts veröffentlicht. Details und manuelle Schritte stehen in `CI_MANUAL_START.md`.
-
-## Historischer CI-Status 1.18.0
-
-Der erste echte GitHub-Actions-Lauf ist **offen / nicht ausgeführt**. Siehe `CI_MANUAL_START.md` für den Connector-Befund und die konkreten manuellen Schritte. Kein automatischer Push, Release oder persönlicher NyarchLinux-Installationsversuch wurde durchgeführt.
-
 # KOR-NEXUS // COMMAND NEXUS
 
-**KOR-NEXUS 1.20.0** ist eine lokale, SQLite-basierte Arbeitsumgebung für Atlas-Notizen, Projekte, Archivwissen, Szenarien und strukturierte Datensätze. Die Bedienoberfläche ist bewusst im dunklen KOR-HUD gestaltet: Graphit, klare Linien, Rot als Akzent und sparsame goldene Markierungen.
+**KOR-NEXUS 1.20.0** ist eine lokal betriebene, SQLite-basierte Arbeitsumgebung für Atlas-Notizen, Projekte, Archivwissen, Szenarien und strukturierte Datensätze. Die Bedienoberfläche nutzt ein dunkles KOR-HUD aus Graphit, klaren Linien, Rot als Akzent und sparsamen Goldmarkierungen.
 
-## Architektur und lokaler Betrieb — Stand 1.20.0
+## Projekt- und Repository-Status
 
-Release 1.17.0 ergänzt einen nativen Arch-Linux-Paketbau in einer eigenen GitHub Actions-Jobumgebung sowie getrennte plattformunabhängige Release-Gates. Der Arch-Job führt `makepkg` als unprivilegierter Benutzer aus und prüft Metadaten und wichtige Paketdateien. Er installiert das Paket nicht auf einem Zielsystem. Der Workflow ist erstellt und lokal statisch geprüft; da diese Arbeitsumgebung Debian ohne makepkg, pacman, Docker oder Podman ist, wurde hier kein nativer Paketbau und noch kein entfernter CI-Lauf ausgeführt.
+- **Kanonischer Quellbaum:** Die versionierten Projektdateien im Repository. Ursprüngliche Upload-Archive bleiben unter `archive/legacy-uploads/` als Herkunfts- und Wiederherstellungsreferenz erhalten; sie sind nicht die aktive Quelle.
+- **Transfer-Branch:** `transfer/kor-nexus-1.20.0`. Wiederherstellung und Bereinigung wurden dort durchgeführt; der Transferprozess hat `main` nicht verändert.
+- **Release-Prüfungen:** `.github/workflows/release.yml` führt portable Qualitätsprüfungen, Browser-Tests und einen nativen Arch-Linux-Paketbau mit isoliertem Installationstest aus. Der Workflow lädt Artefakte hoch, erzeugt aber nicht automatisch GitHub-Releases oder Tags.
+- **Bereits erfolgreich geprüfte Gates:** 29 Kern-API-Tests, `bash scripts/ci.sh quick`, der isolierte Benutzer-Installationstest (inklusive Pfaden mit Leerzeichen, belegtem Standard-Port, Doppelstart, Stop und Datenerhalt bei Deinstallation) sowie die Offline-Weltkarte mit 177 GeoJSON-Features und verifizierter Prüfsumme.
+- **Aktueller Gesamtstatus:** Für den endgültigen Release-Status ist der neueste [GitHub-Actions-Lauf dieses Branches](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0) maßgeblich; ein älterer grüner Job ersetzt nicht das Ergebnis des neuesten Commits.
+- **Vorschaubilder:** Die Dateien unter `preview/` sind ausdrücklich als archivierte visuelle Referenzen gekennzeichnet, nicht als aktuelle QA-Screenshots. Neue Screenshots lassen sich mit `python3 scripts/qa-preview-playwright.py` und installiertem Playwright/Chromium erzeugen.
+
+## Schnellstart
+
+Direkt aus dem Projektordner starten:
+
+```bash
+./launch.sh
+```
+
+Für eine benutzerspezifische Installation mit Anwendungsmenü:
+
+```bash
+./install-user.sh
+```
+
+Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
+
+## Historische technische Änderungen
 
 ## Entwicklungsstand 1.11.0 — Live-RSS und Quellenprüfung
 

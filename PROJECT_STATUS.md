@@ -1,33 +1,23 @@
-## Release 1.20.0 — Repository identifiziert, Remote-CI nicht vorhanden
-
-- [x] Repository `oORaxaOo/KOR-NEXUS` anhand exaktem Namen und Besitzer identifiziert; Standardbranch `main`.
-- [x] GitHub-Connector meldet Admin-/Push-Berechtigungen der verbundenen Identität; keine Schreibaktion durchgeführt.
-- [x] Remote-README geprüft; `.github/workflows/release.yml` fehlt im Branch `main` (404).
-- [x] Lokale Projektkopie besitzt weiterhin kein `.git` und keinen Remote; der vorbereitete Workflow liegt nur lokal vor.
-- [x] Kein Workflow-Dispatch, Commit, Push oder Release ausgelöst.
-- [ ] Workflow kontrolliert übertragen/aktivieren und echten CI-Lauf prüfen; dafür ist ein ausdrücklich freigegebener Übertragungsweg erforderlich.
-- [x] Lokaler Quick-Release-Check, 29 Kern-API-Tests, 19 Browser-Prüfungen und isolierter Benutzer-Installationstest bestanden; kombinierter Full-Check hatte einen Zeitüberschritt, die Gruppen liefen separat erfolgreich.
-- [ ] Nativer Arch-Paketbau bleibt offen, da `makepkg`/`pacman` in dieser Umgebung fehlen.
-
-## Release 1.19.0 — Repository-Zuordnung geprüft, CI-Lauf offen
-
-- [x] Verfügbare GitHub-Connector-Repositories geprüft: `oORaxaOo/test` und `oORaxaOo/myvirtualassistant` (beide privat und Connector-seitig mit Schreibberechtigung gelistet).
-- [x] Beide Repositories auf `.github/workflows/release.yml` geprüft; beide Anfragen ergaben 404.
-- [x] Connector-Suche nach `KOR-NEXUS` und `kor nexus` lieferte keine passenden Repositories.
-- [x] Lokale Kopie ohne `.git`-Verzeichnis und ohne Git-Remote bestätigt.
-- [ ] Repository-Zuordnung offen: benötigt wird die kanonische Repository-URL oder der exakte `owner/repository`-Name beziehungsweise ein Git-Klon mit Remote.
-- [ ] Kein Workflow gestartet, kein Push/Commit/Release ausgeführt; echter CI-Lauf bleibt offen.
-- [x] Aktive Anwendungsversion und Paketversion auf 1.19.0 aktualisiert; Offline-Geodaten und Module beibehalten.
-
-## Release 1.18.0 — CI-Lauf vorbereitet, Ausführung offen
-
-Der Workflow wurde lokal geprüft und fail-closed gehärtet. Der GitHub-Connector listete nur `oORaxaOo/test` und `oORaxaOo/myvirtualassistant`; in beiden war der Workflow-Pfad nicht auffindbar. Die lokale Arbeitskopie hat weder `.git` noch Remote. Daher wurde kein CI-Lauf ausgelöst und nichts veröffentlicht. Details: `CI_MANUAL_START.md`. Arch-Build und Installationstest bleiben bis zu einem echten erfolgreichen GitHub-Actions-Lauf unbestätigt.
-
 # Projektstatus — KOR-NEXUS
 
-Stand: 2026-10-16 · Version 1.20.0 · Meilenstein: **M17 — Repository-Zuordnung und lokales Release-Gate**
+Stand: 2026-10-16 · Version 1.20.0 · Schwerpunkt: Repository-Wiederherstellung, Ordnung und Release-Verifikation
 
-## Release 1.17.0 — Isolierter Arch-Installations- und Integritätstest
+## Release 1.20.0 — Repository-Transfer und Qualitätsprüfung
+
+- [x] Vollständiger 1.20.0-Quellbaum aus den vorhandenen Upload-Artefakten wiederhergestellt; jede wiederverwendete Quelldatei wurde anhand ihrer erwarteten SHA-256-Prüfsumme geprüft.
+- [x] Die zwei fehlenden Textdateien `PKGBUILD` und `scripts/test-installation.sh` gezielt rekonstruiert und anschließend durch CI-/Installationstests validiert.
+- [x] Ursprüngliche Upload-Archive erhalten und nach `archive/legacy-uploads/` verschoben; temporäre Testdatei, Auditdatei und Übertragungsskript aus dem Projektwurzelverzeichnis entfernt.
+- [x] `.gitignore` ergänzt, Vorschaubilder als nicht aktuelle Archiv-Fallbacks gekennzeichnet und den Release-Workflow mit schreibgeschützten Repository-Berechtigungen angelegt.
+- [x] 29/29 Kern-API-Tests, Quick-CI, isolierte Benutzerinstallation, Start/Health/Doppelstart/Stop/Deinstallation und Erhalt der Nutzerdaten erfolgreich durchlaufen.
+- [x] Offline-Weltkarte überprüft: 177 GeoJSON-Features, 364.876 Byte und verifizierte SHA-256-Prüfsumme.
+- [x] Der native Arch-Paketbau einschließlich isoliertem Installationstest wurde in GitHub Actions erfolgreich abgeschlossen: [Workflow-Lauf](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/38965584870).
+- [ ] Den vollständigen portablen Release-Gate für den neuesten Commit anhand des neuesten Actions-Laufs abschließend bestätigen: [aktuelle Läufe](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0).
+- [x] Die Änderungen dieser Übertragungsrunde blieben auf `transfer/kor-nexus-1.20.0`; `main` wurde nicht direkt geändert.
+- [x] Keine automatische Veröffentlichung, Tag-Erstellung oder Installation auf dem persönlichen NyarchLinux-System.
+
+## Historische Implementierungsstände
+
+## Historischer Implementierungsstand 1.17.0 — Isolierter Arch-Installations- und Integritätstest
 
 - [x] GitHub Actions-Workflow mit getrennten Portable-Quality- und Arch-Paketbau-Jobs angelegt
 - [x] Paketverifikation prüft Metadaten und notwendige Payload-Pfade
@@ -35,7 +25,7 @@ Stand: 2026-10-16 · Version 1.20.0 · Meilenstein: **M17 — Repository-Zuordnu
 - [x] Isoliertes Arch-CI-Integrationstestskript für Paketinstallation, Start/Stop und Datenerhalt ergänzt
 - [x] Test nutzt temporäre Daten und dedizierten unprivilegierten Benutzer im kurzlebigen CI-Container
 - [x] Keine Installation auf dem persönlichen Zielsystem vorgenommen
-- [ ] Remote-CI-Lauf, nativer Paketbau und isolierter Integrationstest stehen noch aus
+- Historischer Hinweis: Remote-CI, nativer Paketbau und Integrationstest standen zum damaligen Versionsstand noch aus; der aktuelle Status steht oben bei Release 1.20.0.
 
 ## Release 1.15.0 — CI-Pipeline und automatisierte Release-Gates
 
