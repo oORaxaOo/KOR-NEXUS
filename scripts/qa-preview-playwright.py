@@ -22,9 +22,9 @@ html=html.replace('<link rel="stylesheet" href="./styles.css">',f'<style>\n{css}
 html=html.replace('<script src="./app.js" defer></script>','<!-- API mock is installed before the application script for isolated UI tests -->',1)
 mock=r'''<script>
 const __state={stateGeo:null,tasks:[],records:[{id:900,module:'projects',title:'QA-existing-persisted-project',body:'Loaded from the mock database',region:'SYSTEM',tags:['persisted'],created_at:new Date().toISOString(),updated_at:new Date().toISOString()}],settings:{language:'de',backup_keep:'12',backup_interval_minutes:'30',last_news_refresh:''},backups:[],news:[],sources:[],nextTask:1,nextRecord:1,nextBackup:1,units:[],resources:[],assignments:[],nextUnit:1,nextResource:1,nextAssignment:1,locations:[],nextLocation:1};
-window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;
+window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;window.__qaRequests=[];
 window.fetch=async (input,init={})=>{
- const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();let body={};try{body=init.body?JSON.parse(init.body):{}}catch{}
+ const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();window.__qaRequests.push({url:String(input),path,search:u.search,method});let body={};try{body=init.body?JSON.parse(init.body):{}}catch{}
  const now=()=>new Date().toISOString();
  const res=(data,status=200)=>Promise.resolve(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}));
  const rec=(r)=>({...r});
@@ -106,7 +106,10 @@ with sync_playwright() as p:
   page.locator('#workbenchView [data-workbench-open=archive]').click();page.wait_for_function("document.querySelector('#moduleTitle').textContent==='Archiv'")
   print('PASS: Werkbanknotizen speichern/suchen, Kennzahlen laden, Aufgaben anlegen/abschließen und Modul-Schnellzugriff')
 
-  page.locator('#nav [data-module=news]').click();page.locator('#newsView').wait_for(state='visible');page.get_by_text('QA-Nachrichtenmeldung',exact=True).wait_for(timeout=8000);assert page.locator('#newsList .news-card').count()==2;assert page.locator('#feedStatuses .feed-status').count()==3
+  page.locator('#nav [data-module=news]').click();page.locator('#newsView').wait_for(state='visible')
+  try: page.wait_for_function("document.querySelectorAll('#newsList .news-card').length===2",timeout=8000)
+  except PlaywrightTimeoutError: print('NEWS DIAGNOSTIC:',page.evaluate("JSON.stringify({requests:window.__qaRequests,news:document.querySelector('#newsList')?.innerText,sources:document.querySelector('#feedStatuses')?.innerText,viewHidden:document.querySelector('#newsView')?.hidden})"),'PAGE ERRORS:',errors);raise
+  assert 'QA-Nachrichtenmeldung' in page.locator('#newsList').inner_text();assert page.locator('#feedStatuses .feed-status').count()==3
   page.locator('#newsSearch').fill('Zweite Testmeldung');page.wait_for_function("document.querySelectorAll('#newsList .news-card').length===1");assert 'Zweite Testmeldung' in page.locator('#newsList').inner_text();page.locator('#newsSearch').fill('')
   print('PASS: Nachrichtenmodul ruft den Refresh-Endpunkt auf, zeigt Meldungen und Feedstatus und filtert die Liste')
 
