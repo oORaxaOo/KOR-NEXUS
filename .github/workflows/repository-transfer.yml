@@ -92,6 +92,8 @@ jobs:
             "web/styles.css":"b3819a8d023b3a5209c6f68474bbe7c1cac26de632ecca283b6497b9c9145274",
           }
           found = {name: None for name in EXPECTED}
+          preview_fallback = {}
+          nonexact_previews = []
           archive_report = []
 
           def clean_name(raw):
@@ -140,6 +142,8 @@ jobs:
                               found[rel] = data
                       else:
                           mismatch.append(rel)
+                          if rel.startswith("preview/") and rel not in preview_fallback:
+                              preview_fallback[rel] = data
                   archive_report.append(f"{path.name}: {len(exact)}/{len(EXPECTED)} exact; {len(mismatch)} different")
               except Exception as exc:
                   archive_report.append(f"{path.name}: read error {type(exc).__name__}: {exc}")
@@ -148,7 +152,21 @@ jobs:
           consider_archive(ROOT / "KOR_NEXUS_1.20.0_repository_sync_prep.zip", "zip")
           consider_archive(ROOT / "KOR_NEXUS_1.20.0_source.tar.gz", "tar")
 
+          # Use manually restored local text files only when their bytes match the pinned reference.
+          for rel in EXPECTED:
+              if found[rel] is None:
+                  local_path = ROOT / rel
+                  if local_path.is_file():
+                      local_data = local_path.read_bytes()
+                      if hashlib.sha256(local_data).hexdigest() == EXPECTED[rel]:
+                          found[rel] = local_data
+              # Old screenshots are non-executable presentation assets. Retain them only as explicit fallbacks.
+              if found[rel] is None and rel.startswith("preview/") and rel in preview_fallback:
+                  found[rel] = preview_fallback[rel]
+                  nonexact_previews.append(rel)
+
           missing = sorted(name for name, data in found.items() if data is None)
+          exact_count = sum(1 for rel, data in found.items() if data is not None and hashlib.sha256(data).hexdigest() == EXPECTED[rel])
           report = [
               "# Transfer audit - KOR-NEXUS 1.20.0",
               "",
@@ -157,9 +175,12 @@ jobs:
               "## Archive scan",
               *[f"- {line}" for line in archive_report],
               "",
-              f"Exact files recovered: {len(EXPECTED)-len(missing)}/{len(EXPECTED)}.",
+              f"Exact reference files recovered: {exact_count}/{len(EXPECTED)}.",
               "",
-              "## Missing exact files",
+              "## Explicit preview fallbacks",
+              *([f"- {name}: retained from an existing archive; not byte-identical to the local reference screenshot" for name in sorted(nonexact_previews)] or ["- none"]),
+              "",
+              "## Missing files",
               *([f"- {name}" for name in missing] or ["- none"]),
               "",
               "No archive content is executed before its bytes match the reference SHA-256."
@@ -230,6 +251,16 @@ jobs:
           not the binary archives in this folder.
           EOF
           rm -f transfer-kor-nexus-1.20.0.sh TRANSFER_WRITE_TEST_2026-10-16.txt TRANSFER_AUDIT_REPORT.md
+          if [[ -d preview ]]; then
+            cat > preview/README.md <<'EOF'
+          # Preview assets
+
+          The preview PNGs are visual references only. The local reference screenshots were not
+          present byte-for-byte in the legacy GitHub upload artifacts, so the retained images are
+          clearly treated as archive fallbacks rather than current QA results. Recreate current
+          screenshots with scripts/qa-preview-playwright.py after installing its Playwright dependency.
+          EOF
+          fi
           cat > .gitignore <<'EOF'
           # Python caches and virtual environments
           __pycache__/
