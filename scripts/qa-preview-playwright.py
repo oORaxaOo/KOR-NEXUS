@@ -87,9 +87,20 @@ with sync_playwright() as p:
   page.set_content(html,wait_until='domcontentloaded',timeout=10000)
   page.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
   assert page.title()=='KOR-NEXUS // COMMAND NEXUS'
-  assert page.locator('#nav button').count()==7
+  assert page.locator('#nav button').count()==8
   assert page.locator('#stateGrid .state-button').count()==16
-  print('PASS: UI startet, 7 Module und 16 Bundesländerindex-Elemente sind sichtbar')
+  print('PASS: UI startet, 8 Module und 16 Bundesländerindex-Elemente sind sichtbar')
+  page.locator('#nav [data-module=workbench]').click();page.locator('#workbenchView').wait_for(state='visible')
+  page.locator('#workbenchNoteTitle').fill('QA-Werkbanknotiz');page.locator('#workbenchNoteBody').fill('Persistenter Testinhalt');page.locator('#workbenchNoteTags').fill('QA, Architektur');page.locator('#workbenchNoteForm button[type=submit]').click()
+  page.get_by_text('QA-Werkbanknotiz').wait_for(timeout=3000);assert page.locator('#workbenchNotes .workbench-note').count()==1
+  page.locator('#workbenchSearch').fill('kein-treffer');page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===0")
+  page.locator('#workbenchSearch').fill('QA-Werkbanknotiz');page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===1")
+  page.locator('#workbenchTaskTitle').fill('QA-Werkbankaufgabe');page.locator('#workbenchTaskArea').fill('QA');page.locator('#workbenchTaskForm button[type=submit]').click()
+  page.get_by_text('QA-Werkbankaufgabe').wait_for(timeout=3000);assert page.locator('#workbenchMetrics .dashboard-metric').count()==5
+  page.locator('#workbenchTasks [data-workbench-done]').click();page.wait_for_function("!document.querySelector('#workbenchTasks').innerText.includes('QA-Werkbankaufgabe')")
+  page.locator('#workbenchView [data-workbench-open=archive]').click();page.wait_for_function("document.querySelector('#moduleTitle').textContent==='Archiv'")
+  print('PASS: Werkbanknotizen speichern/suchen, Kennzahlen laden, Aufgaben anlegen/abschließen und Modul-Schnellzugriff')
+
   page.locator('#nav [data-module=projects]').click();page.locator('#projectDashboard').wait_for(state='visible');page.locator('#dashboardProjectList').wait_for();page.wait_for_function("document.querySelectorAll('#dashboardMetrics .dashboard-metric').length===4");assert 'QA-existing-persisted-project' in page.locator('#dashboardProjectList').inner_text();assert 'QA-Offene-Aufgabe' in page.locator('#dashboardProjectList').inner_text();assert 'QA-Mitglied' in page.locator('#dashboardProjectList').inner_text();assert 'QA-Ressource' in page.locator('#dashboardProjectList').inner_text();assert '2 Kisten' in page.locator('#dashboardProjectList').inner_text();page.locator('#dashboardStatus').select_option('blockiert');page.wait_for_function("document.querySelector('#dashboardProjectList').innerText.includes('Keine Projekte passen')");page.locator('#dashboardStatus').select_option('aktiv');page.wait_for_function("document.querySelector('#dashboardProjectList').innerText.includes('QA-existing-persisted-project')");page.locator('#dashboardRegion').select_option('Nicht vorhanden') if page.locator('#dashboardRegion option[value=\"Nicht vorhanden\"]').count() else None;print('PASS: Projekt-Dashboard zeigt ID-verknüpfte QA-Beziehungen, Ressourcen-Einheiten und leeres Filterergebnis')
   page.locator('#nav [data-module=atlas]').click()
   page.locator('#atlasRecordTitle').fill('QA Atlas-Notiz');page.locator('#atlasRecordBody').fill('Testnotiz');page.locator('#atlasRecordForm button').click()
@@ -183,7 +194,7 @@ with sync_playwright() as p:
   assert clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-color')") in ('rgb(211, 74, 78)','rgba(211, 74, 78, 1)')
   assert clean.evaluate("getComputedStyle(document.querySelector('.panel-head'),'::before').getPropertyValue('width')")=='2px'
   assert '--grid-line' in clean.locator('html').get_attribute('style') if clean.locator('html').get_attribute('style') else True
-  assert design['nav']==7,design
+  assert design['nav']==8,design
   clean.screenshot(path=str(SCREENSHOT),full_page=True);clean.screenshot(path=str(DESKTOP_SHOT),full_page=True)
   print('PASS: visuelle Design-Tokens, charakteristische Abschnittsmarkierung, Panel-Raster und sieben Module geprüft')
   clean.set_viewport_size({'width':390,'height':844});clean.wait_for_timeout(120)
