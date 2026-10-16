@@ -7,13 +7,15 @@ Reference ZIP SHA-256: 535499d9ff851dec75afaf8f61a51567c81656459888306c9a12346ee
 - KOR_NEXUS_1.20.0_repository_sync_prep.zip: no recognizable project root
 - KOR_NEXUS_1.20.0_source.tar.gz: 31/36 exact; 2 different
 
-Exact files recovered: 31/36.
+Exact reference files recovered: 31/36.
 
-## Missing exact files
+## Explicit preview fallbacks
+- preview/hud-redesign-desktop.png: retained from an existing archive; not byte-identical to the local reference screenshot
+- preview/hud-redesign-mobile.png: retained from an existing archive; not byte-identical to the local reference screenshot
+- preview/smoke-test.png: retained from an existing archive; not byte-identical to the local reference screenshot
+
+## Missing files
 - PKGBUILD
-- preview/hud-redesign-desktop.png
-- preview/hud-redesign-mobile.png
-- preview/smoke-test.png
 - scripts/test-installation.sh
 
 No archive content is executed before its bytes match the reference SHA-256.
