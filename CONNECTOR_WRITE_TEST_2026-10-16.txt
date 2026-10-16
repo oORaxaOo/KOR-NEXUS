@@ -1,0 +1,3 @@
+KOR-NEXUS GitHub write-access test
+Created to verify connector access on the dedicated transfer branch.
+This temporary file should be deleted after verification.
