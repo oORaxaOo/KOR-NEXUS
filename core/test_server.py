@@ -243,6 +243,27 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(fresh['news']['items'][0]['title'],'Testmeldung')
         self.assertEqual(fresh['map_locations'][0]['task_id'],new_task)
 
+    def test_portable_import_rejects_unsafe_news_links(self):
+        self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})
+        payload=self.req('/api/export')[1]
+        payload['news']['items']=[{
+            'id':'unsafe-link','source_key':'imported','source_name':'Imported source',
+            'title':'Unsafe link test','summary':'','url':'javascript:alert(1)',
+            'published':'','fetched_at':app.utcnow()
+        }]
+        before=self.req('/api/export')[1]
+        backups_before=len(list(app.BACKUP_DIR.glob('kor-*.sqlite3')))
+        status,preview=self.req('/api/import/preview','POST',{'data':payload})
+        self.assertEqual(status,200)
+        self.assertFalse(preview['valid'])
+        status,result=self.req('/api/import','POST',{'data':payload})
+        self.assertEqual(status,400)
+        self.assertIn('HTTP(S)',result['error'])
+        after=self.req('/api/export')[1]
+        self.assertEqual(after['tasks'],before['tasks'])
+        self.assertEqual(after['news']['items'],before['news']['items'])
+        self.assertEqual(len(list(app.BACKUP_DIR.glob('kor-*.sqlite3'))),backups_before)
+
     def test_invalid_portable_reference_is_rejected_before_backup_or_mutation(self):
         self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})
         before=self.req('/api/export')[1]
