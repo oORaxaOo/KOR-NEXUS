@@ -9,7 +9,7 @@ depends=('python')
 optdepends=('chromium: separates App-Fenster im Ein-Klick-Start'
             'xdg-utils: Browser-Fallback, falls Chromium fehlt'
             'firefox: alternativer Browser')
-source=("\${pkgname}-\${pkgver}.tar.gz")
+source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=('86ce85ab56777ef76ae3169aeec6d4e36054d80efc5139a59a4d8e04eafbd518')
 
 build() {
