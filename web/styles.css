@@ -126,3 +126,71 @@ h1{font-weight:760;letter-spacing:.075em;text-transform:uppercase}
  .topbar{height:62px}.layout aside{top:62px}.main{padding:20px 12px 30px}.page-head{padding-bottom:15px}.page-head:after{width:42px}h1{font-size:clamp(25px,7vw,30px);letter-spacing:.055em}.panel-head{padding:13px 14px}.panel-head:before{top:12px;bottom:12px}.map-wrap{min-height:300px}.map-grid{background-size:28px 28px}.dashboard-metric strong{font-size:22px}.dashboard-project:hover{transform:none}.nav button{min-height:40px}.nav button.active:after{top:9px;bottom:9px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transform:none!important;scroll-behavior:auto!important}}
+
+
+/* KOR NEXUS // tactical atlas pass */
+.map-wrap{
+ border:1px solid #593238;
+ box-shadow:inset 0 0 0 1px #b83b4412,inset 0 0 64px #a7192410,0 0 28px #0008;
+ background:
+  radial-gradient(ellipse at 50% 45%,#2a1b20 0,#17191c 48%,#0c1013 100%);
+}
+.map-grid{
+ background-image:
+  linear-gradient(#df50500b 1px,transparent 1px),
+  linear-gradient(90deg,#df50500b 1px,transparent 1px),
+  linear-gradient(180deg,transparent 0%,#e23c3c08 50%,transparent 100%);
+ background-size:32px 32px,32px 32px,100% 5px;
+}
+.map-wrap:before,.map-wrap:after{background:#c24b5530;box-shadow:0 0 12px #c52b3820}
+.geographic-map{overflow:hidden;filter:drop-shadow(0 0 5px #b6243020)}
+.geo-country{
+ fill:#24282d;
+ fill-opacity:.96;
+ stroke:#8a444b;
+ stroke-width:.7;
+ vector-effect:non-scaling-stroke;
+}
+.geo-country:hover{fill:#392329;stroke:#df6b72}
+.geo-country.geo-germany{
+ fill:#7d2633;
+ fill-opacity:.78;
+ stroke:#f0c37a;
+ stroke-width:1.4;
+ filter:drop-shadow(0 0 4px #b93648);
+}
+.geo-state{
+ fill:#d12f4517;
+ stroke:#e4b873;
+ stroke-width:1.2;
+ vector-effect:non-scaling-stroke;
+}
+.geo-state:hover,.geo-state:focus{
+ fill:#c8293c70;
+ stroke:#ffe0a0;
+ filter:drop-shadow(0 0 4px #d53548);
+}
+.map-controls .btn{backdrop-filter:blur(8px);background:#0d1013e8;border-color:#51343a}
+.map-controls .active{background:#4a1822;border-color:#d1a96a;box-shadow:0 0 16px #b92d3a24}
+.map-stamp,.map-scale{
+ padding:6px 8px;
+ background:#0a0d10c9;
+ border:1px solid #34373b;
+ color:#c0b5b7;
+}
+.map-pin{
+ border-color:#d44a57;
+ background:#100e12ed;
+ color:#f0d6d8;
+ box-shadow:0 0 0 3px #d43a4a20,0 0 15px #bc263530,0 5px 14px #000b;
+}
+.map-pin:before{background:#ed4a5b;box-shadow:0 0 11px #ed4a5b}
+.map-pin[data-status="aktiv"]{border-color:#e4bd6f}
+.map-pin[data-status="blockiert"]{border-color:#ff5968;box-shadow:0 0 0 3px #ff344520,0 0 18px #ff34452e}
+.map-pin[data-status="abgeschlossen"]{border-color:#81bda0}
+.map-pin:hover,.map-pin:focus-visible{background:#451923;color:#fff;outline:1px solid #f0c37a}
+.map-footer{border-top-color:#473237}
+@media(prefers-reduced-motion:no-preference){
+ .geo-country{transition:fill .18s ease,stroke .18s ease}
+ .map-pin{transition:background .18s ease,box-shadow .18s ease}
+}
