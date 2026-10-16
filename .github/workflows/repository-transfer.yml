@@ -70,7 +70,7 @@ jobs:
             "scripts/qa-preview-playwright.py":"6f6afd4dcb29a78dc3dab5d480a1829987ba99a997ac35e4502dcb33f084bc8a",
             "scripts/release-check.sh":"93b630aa1d078e3e640c708534c5f02e536d15f068913bc5726fda0889e2e6ea",
             "scripts/test-built-package-installation.sh":"6b8378d4468e3a86532b8125e2164ed29c3b4db48584adfe5acb8c6628393654",
-            "scripts/test-installation.sh":"f8ed7683cf19cc384af75eb96a86b81a3affad238999cd1f130870000bb4b83",
+            "scripts/test-installation.sh":"f8ed7683cf19cc384af75eb96a86bcab3f1cd5dff187f14406314418890f78a5",
             "scripts/verify-built-package.py":"200a7f4afef9e1cd26a82daf0c90e75b517bb8134ea01e8d0cb48e9801a56662",
             "scripts/verify-source.sh":"f91869dbe31d2f78e9fcd2da1fb856d49c5fd70e39012eb4e8ed71eaf0f723a0",
             "stop.sh":"7f43bbe19f0481916e79620dcaab85762195c921d654ce5145c91180ce5c53ec",
