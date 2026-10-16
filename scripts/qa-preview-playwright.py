@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 except ImportError as exc:
     raise SystemExit('Optionaler Test: Python Playwright fehlt. Die Anwendung selbst benötigt es nicht.') from exc
 
@@ -72,9 +72,14 @@ html=html.replace('</body>',mock+'\n'+local_storage_shim+'\n<script>\n'+js+'\n</
 
 browser_path=os.environ.get('PLAYWRIGHT_CHROMIUM_PATH','/usr/bin/chromium');errors=[]
 with sync_playwright() as p:
- opts={'headless':True,'timeout':15000}
+ opts={'headless':True,'timeout':45000}
  if Path(browser_path).exists():opts['executable_path']=browser_path
- browser=p.chromium.launch(**opts,args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote','--disable-background-networking'])
+ launch_args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote','--disable-background-networking']
+ try:
+  browser=p.chromium.launch(**opts,args=launch_args)
+ except PlaywrightTimeoutError:
+  print('WARN: Chromium-Start überschritt 45 Sekunden; ein kontrollierter zweiter Versuch folgt.')
+  browser=p.chromium.launch(**{**opts,'timeout':60000},args=launch_args)
  try:
   page=browser.new_page(viewport={'width':1440,'height':1000});page.on('pageerror',lambda e:errors.append(str(e)))
   page.set_content(html,wait_until='domcontentloaded',timeout=10000)
