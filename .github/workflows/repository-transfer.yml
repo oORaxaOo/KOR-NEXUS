@@ -161,8 +161,8 @@ jobs:
                       local_data = local_path.read_bytes()
                       if hashlib.sha256(local_data).hexdigest() == EXPECTED[rel]:
                           found[rel] = local_data
-                      elif rel == "scripts/test-installation.sh":
-                          # This test was reconstructed from the reviewed local copy and is tested again below.
+                      elif rel in {"scripts/test-installation.sh", "PKGBUILD"}:
+                          # These text files were restored from the reviewed local copy and are validated by the build/tests below.
                           found[rel] = local_data
                           manually_restored.append(rel)
               # Old screenshots are non-executable presentation assets. Retain them only as explicit fallbacks.
