@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=KOR-NEXUS
+GenericName=Local Knowledge and Planning Workspace
+Comment=Lokale SQLite-Workstation für Wissen, Projekte und Lageübersichten
+Exec=kor-workstation
+Icon=kor-workstation
+Terminal=false
+Categories=Office;Utility;Development;
+Keywords=Kor;Notizen;Projekte;Archiv;Atlas;SQLite;
+StartupNotify=true

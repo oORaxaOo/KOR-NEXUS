@@ -1,0 +1,23 @@
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Frontend/build outputs
+node_modules/
+dist/
+build/
+*.pkg.tar.*
+kor-workstation-*.tar.gz
+SOURCE_SHA256SUMS.txt
+
+# Runtime/user data - never commit
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+backups/
+.env
+.env.*
+!.env.example
