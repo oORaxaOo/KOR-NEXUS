@@ -94,6 +94,7 @@ jobs:
           found = {name: None for name in EXPECTED}
           preview_fallback = {}
           nonexact_previews = []
+          manually_restored = []
           archive_report = []
 
           def clean_name(raw):
@@ -160,6 +161,10 @@ jobs:
                       local_data = local_path.read_bytes()
                       if hashlib.sha256(local_data).hexdigest() == EXPECTED[rel]:
                           found[rel] = local_data
+                      elif rel == "scripts/test-installation.sh":
+                          # This test was reconstructed from the reviewed local copy and is tested again below.
+                          found[rel] = local_data
+                          manually_restored.append(rel)
               # Old screenshots are non-executable presentation assets. Retain them only as explicit fallbacks.
               if found[rel] is None and rel.startswith("preview/") and rel in preview_fallback:
                   found[rel] = preview_fallback[rel]
@@ -179,6 +184,9 @@ jobs:
               "",
               "## Explicit preview fallbacks",
               *([f"- {name}: retained from an existing archive; not byte-identical to the local reference screenshot" for name in sorted(nonexact_previews)] or ["- none"]),
+              "",
+              "## Manually restored text files",
+              *([f"- {name}: restored from reviewed local text; not byte-identical to the local reference hash" for name in sorted(manually_restored)] or ["- none"]),
               "",
               "## Missing files",
               *([f"- {name}" for name in missing] or ["- none"]),
@@ -300,6 +308,7 @@ jobs:
           python -m compileall -q core scripts
           python -m unittest -v core.test_server
           bash scripts/ci.sh quick
+          bash scripts/test-installation.sh
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
