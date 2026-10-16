@@ -15,6 +15,9 @@ MOBILE_SHOT=ROOT/'preview'/'hud-redesign-mobile.png'
 html=HTML_SOURCE.read_text(encoding='utf-8');css=CSS_SOURCE.read_text(encoding='utf-8');js=JS_SOURCE.read_text(encoding='utf-8')
 assert js.count('async function loadGeographicData()')==1, 'Geodaten-Lader darf nur einmal definiert sein'
 assert 'function mercatorY(lat)' in js and 'Math.atan(Math.sinh(y))' in js, 'Mercator-Projektion und inverse Koordinatenumrechnung müssen vorhanden sein'
+assert 'function filteredMapLocations()' in js and 'function exportAtlasCsv()' in js, 'Atlas muss gemeinsame Markerfilter und CSV-Export anbieten'
+assert 'function validateStateGeoJSON(geo)' in js, 'GeoJSON-Import muss vor dem Speichern validiert werden'
+assert 'id="mapLocFilterKind"' in html and 'id="exportAtlasCsv"' in html, 'Atlas-Werkzeuge müssen im UI vorhanden sein'
 html=html.replace('<link rel="stylesheet" href="./styles.css">',f'<style>\n{css}\n</style>',1)
 html=html.replace('<script src="./app.js" defer></script>','<!-- API mock is installed before the application script for isolated UI tests -->',1)
 mock=r'''<script>
@@ -109,6 +112,10 @@ with sync_playwright() as p:
   page.locator('#stateGrid [data-state="Hessen"]').click();assert page.locator('#regionTitle').inner_text()=='Hessen'
   print('PASS: Atlas-Notizen lassen sich speichern und Bundeslandauswahl ist interaktiv')
   page.locator('#mapLocTitle').fill('QA-Kartenmarker');page.locator('#mapLocLat').fill('52.52');page.locator('#mapLocLon').fill('13.405');page.locator('#mapLocRegion').fill('Berlin');page.locator('#mapLocStatus').select_option('aktiv');page.locator('#mapLocProgress').fill('35');page.locator('#mapLocationForm button[type=submit]').click();page.get_by_text('QA-Kartenmarker').first.wait_for();assert page.locator('#mapLocationLayer .map-pin').count()==1;assert page.locator('#mapLocationList .map-location-row').count()==1;assert 'aktiv' in page.locator('#mapLocationList').inner_text();assert '35%' in page.locator('#mapLocationList').inner_text();page.locator('[data-edit-map-location]').click();page.locator('#mapLocStatus').select_option('blockiert');page.locator('#mapLocProgress').fill('55');page.locator('#mapLocSubmit').click();page.wait_for_function("document.querySelector('#mapLocationList').innerText.includes('blockiert') && document.querySelector('#mapLocationList').innerText.includes('55%')");page.locator('#mapLocSearch').fill('kein-treffer');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===0");page.locator('#mapLocSearch').fill('QA-Kartenmarker');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===1")
+  page.locator('#mapLocFilterKind').select_option('Standort');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===0 && document.querySelectorAll('#mapLocationLayer .map-pin').length===0");page.locator('#mapLocFilterKind').select_option('Projekt');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===1 && document.querySelectorAll('#mapLocationLayer .map-pin').length===1");assert '1 Treffer' in page.locator('#atlasFilterSummary').inner_text();with_download=None
+  with page.expect_download() as download_info: page.locator('#exportAtlasCsv').click()
+  assert download_info.value.suggested_filename.endswith('.csv')
+  print('PASS: Atlasfilter synchronisiert Karte und Liste; CSV-Export liefert eine Datei')
   # Click-to-coordinate: coordinate fields update without submitting the form.
   page.locator('#geographicMap').scroll_into_view_if_needed();mapbox=page.locator('#geographicMap').bounding_box();page.mouse.click(mapbox['x']+mapbox['width']*.6,mapbox['y']+mapbox['height']*.4)
   assert page.locator('#mapLocLat').input_value()!='52.52' or page.locator('#mapLocLon').input_value()!='13.405'
@@ -131,6 +138,9 @@ with sync_playwright() as p:
   sample={'type':'FeatureCollection','features':[{'type':'Feature','properties':{'name':'Berlin'},'geometry':{'type':'Polygon','coordinates':[[[13,52],[14,52],[14,53],[13,53],[13,52]]]}}]}
   page.locator('#stateGeoJsonFile').set_input_files({'name':'states.geojson','mimeType':'application/geo+json','buffer':__import__('json').dumps(sample).encode()});page.locator('#importStateGeoJson').click();page.wait_for_function("document.querySelectorAll('#geographicStateLayer .geo-state').length===1",timeout=3000)
   assert '1 GRENZPOLYGONE' in page.locator('#mapStamp').inner_text()
+  invalid={'type':'FeatureCollection','features':[{'type':'Feature','properties':{'name':'bad'},'geometry':{'type':'Point','coordinates':[13,52]}}]}
+  page.locator('#stateGeoJsonFile').set_input_files({'name':'invalid.geojson','mimeType':'application/geo+json','buffer':__import__('json').dumps(invalid).encode()});page.locator('#importStateGeoJson').click();page.wait_for_function("document.querySelector('#toast').innerText.includes('Polygon')")
+  assert len(page.evaluate('__state.stateGeo.features'))==1, 'Ungültige GeoJSON-Geometrie darf gespeicherte Geodaten nicht überschreiben'
   page.locator('[data-map-mode="world"]').click();assert page.locator('#geographicLand .geo-country').count()>=2
   print('PASS: GeoJSON-Weltkarte, Deutschlandansicht und lokaler Bundesland-Geodatenimport')
   print('PASS: Kartenmarker anlegen, Status/Fortschritt bearbeiten, suchen, auflisten und löschen')
