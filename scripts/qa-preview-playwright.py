@@ -171,6 +171,14 @@ with sync_playwright() as p:
   clean=browser.new_page(viewport={'width':1440,'height':1000});clean.set_content(html,wait_until='domcontentloaded',timeout=10000);clean.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
   design=clean.evaluate("({bg:getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),red:getComputedStyle(document.documentElement).getPropertyValue('--red').trim(),focus:!!document.querySelector(':focus-visible'),reducedMotion:!![...document.styleSheets].length,nav:document.querySelectorAll('#nav button').length})")
   assert design['bg']=='#0b0d0f' and design['red']=='#d34a4e',design
+  assert clean.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()")=='#d8b56c'
+  assert clean.evaluate("getComputedStyle(document.querySelector('.topbar')).position")=='sticky'
+  assert clean.evaluate("getComputedStyle(document.querySelector('.nav button.active'),'::after').getPropertyValue('background-color')") in ('rgb(216, 181, 108)','rgba(216, 181, 108, 1)')
+  assert clean.evaluate("getComputedStyle(document.querySelector('.panel')).getPropertyValue('box-shadow')")!='none'
+  assert clean.evaluate("getComputedStyle(document.querySelector('.btn')).getPropertyValue('background-image')")!='none'
+  css_text=clean.evaluate("Array.from(document.styleSheets).map(s=>{try{return Array.from(s.cssRules).map(r=>r.cssText).join('\\n')}catch(e){return ''}}).join('\\n')")
+  assert 'KOR NEXUS // command citadel redesign' in css_text
+  assert '@media (max-width: 720px)' in css_text or '@media(max-width:720px)' in css_text
   assert clean.locator('.page-head:after').count()==0 or True
   assert clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-color')") in ('rgb(211, 74, 78)','rgba(211, 74, 78, 1)')
   assert clean.evaluate("getComputedStyle(document.querySelector('.panel-head'),'::before').getPropertyValue('width')")=='2px'
