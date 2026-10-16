@@ -1,4 +1,0 @@
-KOR-NEXUS GitHub write-access verification
-Created by ChatGPT on 2026-10-16 in branch transfer/kor-nexus-1.20.0.
-Purpose: confirm that the connected GitHub integration can create and read a file on the transfer branch.
-This is a temporary test artifact; it is not part of the application source.

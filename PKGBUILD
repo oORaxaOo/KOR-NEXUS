@@ -10,7 +10,7 @@ optdepends=('chromium: separates App-Fenster im Ein-Klick-Start'
             'xdg-utils: Browser-Fallback, falls Chromium fehlt'
             'firefox: alternativer Browser')
 source=("${pkgname}-${pkgver}.tar.gz")
-sha256sums=('86ce85ab56777ef76ae3169aeec6d4e36054d80efc5139a59a4d8e04eafbd518')
+sha256sums=('1489c6e83eba03e6856f04b39ce3ce1a20deca5e7b901f3b6ac0d30a19eb4ebb')
 
 build() {
   cd "$srcdir"
