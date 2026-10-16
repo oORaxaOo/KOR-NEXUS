@@ -83,10 +83,10 @@ KOR_NO_BROWSER=1 "$BIN" & SERVER_PID=$!
 for _ in {1..80}; do [[ -s "$XDG_DATA_HOME/kor-workstation/runtime.json" ]] && break; sleep 0.1; done
 [[ -s "$XDG_DATA_HOME/kor-workstation/runtime.json" ]]
 # Concurrent launcher call must reuse the existing instance, not spawn another server.
-BEFORE_PORT="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])["port"])' "$XDG_DATA_HOME/kor-workstation/runtime.json")"
+BEFORE_PORT="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["port"]' "$XDG_DATA_HOME/kor-workstation/runtime.json")"
 "$BIN" > "$TMP/second-start.log" 2>&1
 grep -E 'wird bereits gestartet|läuft bereits' "$XDG_STATE_HOME/kor-workstation/server.log" >/dev/null
-AFTER_PORT="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])["port"])' "$XDG_DATA_HOME/kor-workstation/runtime.json")"
+AFTER_PORT="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["port"]' "$XDG_DATA_HOME/kor-workstation/runtime.json")"
 [[ "$BEFORE_PORT" == "$AFTER_PORT" ]]
 kill -0 "$SERVER_PID"
 "$STOP"
