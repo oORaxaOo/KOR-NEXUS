@@ -14,8 +14,10 @@ Exact reference files recovered: 31/36.
 - preview/hud-redesign-mobile.png: retained from an existing archive; not byte-identical to the local reference screenshot
 - preview/smoke-test.png: retained from an existing archive; not byte-identical to the local reference screenshot
 
+## Manually restored text files
+- scripts/test-installation.sh: restored from reviewed local text; not byte-identical to the local reference hash
+
 ## Missing files
 - PKGBUILD
-- scripts/test-installation.sh
 
 No archive content is executed before its bytes match the reference SHA-256.
