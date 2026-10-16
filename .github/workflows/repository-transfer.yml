@@ -1,4 +1,5 @@
 name: One-time KOR-NEXUS transfer and cleanup
+# Retry after fixing the temporary reconstructed test's port expressions.
 
 on:
   push:
