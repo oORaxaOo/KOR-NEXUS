@@ -1667,6 +1667,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         except Exception:return self.fail(400,'Ereignis-Aufbewahrung muss 1000–1000000 sein.')
                     with db_connect() as con:
                         for k,v in data.items():con.execute('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',(k,str(v),now))
+                        if 'event_retention_count' in data:prune_event_journal(con)
                     return self.send_json({'settings':get_settings()})
             except Exception as e:print(f'[KOR] PATCH-Fehler: {e}',file=sys.stderr);return self.fail(500,'Interner Fehler.')
         return self.fail(404,'Endpunkt nicht gefunden.')

@@ -312,6 +312,11 @@ class CoreApiTests(unittest.TestCase):
             for i in range(1005):
                 con.execute("""INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
                     VALUES(?,?,'test',?,'created','{}',1)""",(f'retention-test-{i}',app.utcnow(),str(i)))
+            self.assertEqual(con.execute('SELECT COUNT(*) AS n FROM event_journal').fetchone()['n'],1005)
+        status,updated=self.req('/api/settings','PATCH',{'event_retention_count':'1000'})
+        self.assertEqual(status,200)
+        self.assertEqual(updated['settings']['event_retention_count'],'1000')
+        with app.db_connect() as con:
             count=con.execute('SELECT COUNT(*) AS n FROM event_journal').fetchone()['n']
             bounds=con.execute('SELECT MIN(event_id) AS first,MAX(event_id) AS last FROM event_journal').fetchone()
             self.assertLessEqual(count,1000)
