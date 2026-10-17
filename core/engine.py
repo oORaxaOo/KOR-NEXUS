@@ -69,6 +69,8 @@ def build_engine_status(con, ai_status):
         'units': _count(con, 'SELECT COUNT(*) FROM units'),
         'resources': _count(con, 'SELECT COUNT(*) FROM resources'),
         'assignments': _count(con, 'SELECT COUNT(*) FROM project_assignments'),
+        'resource_policies': _count(con, 'SELECT COUNT(*) FROM resource_policies') if 'resource_policies' in tables else 0,
+        'open_alerts': _count(con, "SELECT COUNT(*) FROM alerts WHERE status IN ('open','acknowledged')") if 'alerts' in tables else 0,
     }
     checks = [
         {'name': 'sqlite_integrity', 'ok': integrity == 'ok', 'detail': integrity},
