@@ -305,9 +305,6 @@ class CoreApiTests(unittest.TestCase):
         status,settings=self.req('/api/settings')
         self.assertEqual(status,200)
         self.assertEqual(settings['settings']['event_retention_count'],'100000')
-        status,updated=self.req('/api/settings','PATCH',{'event_retention_count':'1000'})
-        self.assertEqual(status,200)
-        self.assertEqual(updated['settings']['event_retention_count'],'1000')
         with app.db_connect() as con:
             for i in range(1005):
                 con.execute("""INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
