@@ -6,6 +6,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+if __package__:
+    from .ai_provider import DisabledAIProvider
+    from .engine import build_engine_status
+else:
+    from ai_provider import DisabledAIProvider
+    from engine import build_engine_status
+
+AI_PROVIDER = DisabledAIProvider()
+
+
+
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
 ROOT = Path(__file__).resolve().parents[1]
@@ -753,6 +764,9 @@ class AppHandler(BaseHTTPRequestHandler):
         if path=='/api/events/stream': return self.stream_events(q)
         if path.startswith('/api/'):
             maybe_backup()
+            if path=='/api/engine/status':
+                with db_connect() as con: return self.send_json(build_engine_status(con,AI_PROVIDER.status()))
+            if path=='/api/ai/status': return self.send_json(AI_PROVIDER.status())
             if path=='/api/events':
                 if q.get('snapshot',['0'])[0]=='1':
                     with db_connect() as con:

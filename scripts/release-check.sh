@@ -26,7 +26,7 @@ for file,pattern in checks.items():
  if file=='core/test_server.py' and text.count(v)<2: raise SystemExit('FEHLER: API-Test-Fixtures enthalten uneinheitliche Versionsangaben')
 print(f'OK Versionskonsistenz: {v}')
 PY
-python3 -m py_compile core/server.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py
+python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py
 bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh
 if command -v node >/dev/null 2>&1; then node --check web/app.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
 bash scripts/verify-source.sh
@@ -34,7 +34,7 @@ bash scripts/verify-source.sh
 python3 - <<'PYFILES'
 from pathlib import Path
 required = [
- 'core/server.py','core/__init__.py','web/index.html','web/styles.css','web/app.js',
+ 'core/server.py','core/engine.py','core/ai_provider.py','core/__init__.py','web/index.html','web/styles.css','web/app.js',
  'web/geodata/world.geojson','packaging/kor-workstation-launcher.sh',
  'packaging/kor-workstation-stop.sh','packaging/kor-workstation.desktop',
  'packaging/icons/kor-workstation.svg','LICENSE','README.md','EXPORT_SCHEMA.md',
@@ -59,7 +59,7 @@ v=sys.argv[1]; p=Path(f'kor-workstation-{v}.tar.gz')
 with tarfile.open(p,'r:gz') as t:
  bad=t.getmembers()
  names={m.name.lstrip('./') for m in bad}
- required={'PKGBUILD','core/server.py','core/test_server.py','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/test-built-package-installation.sh'}
+ required={'PKGBUILD','core/server.py','core/engine.py','core/ai_provider.py','core/test_server.py','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/test-built-package-installation.sh'}
  missing=required-names
  if missing: raise SystemExit(f'FEHLER: Quellarchiv-Dateien fehlen: {sorted(missing)}')
  if t.getmembers() and any(m.mtime != 0 for m in t.getmembers()): raise SystemExit('FEHLER: Quellarchiv-Zeitstempel nicht deterministisch')

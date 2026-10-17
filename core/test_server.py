@@ -34,6 +34,35 @@ class CoreApiTests(unittest.TestCase):
         try:
             with urlopen(req,timeout=5) as res:return res.status,json.loads(res.read().decode())
         except HTTPError as e:return e.code,json.loads(e.read().decode())
+    def test_core_engine_status_is_read_only_and_llm_optional(self):
+        _,before=self.req('/api/events?since=0&snapshot=1')
+        status,initial=self.req('/api/engine/status')
+        self.assertEqual(status,200)
+        self.assertEqual(initial['state'],'ready')
+        self.assertFalse(initial['llm_required'])
+        self.assertEqual(initial['ai']['provider'],'disabled')
+        self.assertFalse(initial['ai']['available'])
+        self.assertEqual(initial['database']['integrity'],'ok')
+        self.assertEqual(initial['database']['foreign_key_violations'],0)
+        self.req('/api/tasks','POST',{'title':'Engine-Status-Test'})
+        status,updated=self.req('/api/engine/status')
+        self.assertEqual(status,200)
+        self.assertEqual(updated['counts']['open_tasks'],initial['counts']['open_tasks']+1)
+        _,after=self.req('/api/events?since=0&snapshot=1')
+        self.assertEqual(after['latest_event_id'],before['latest_event_id']+1)
+        self.assertEqual(updated['database']['event_cursor'],after['latest_event_id'])
+        status,ai=self.req('/api/ai/status')
+        self.assertEqual(status,200)
+        self.assertFalse(ai['enabled'])
+        self.assertFalse(ai['model_loaded'])
+
+    def test_disabled_ai_provider_refuses_generation_without_side_effects(self):
+        from core.ai_provider import AIUnavailableError, DisabledAIProvider
+        provider=DisabledAIProvider()
+        with self.assertRaises(AIUnavailableError):
+            provider.generate('This must not run')
+        self.assertFalse(provider.status()['available'])
+
     def test_event_journal_tracks_changes_and_replays_by_cursor(self):
         _,initial=self.req('/api/events')
         cursor=initial['latest_event_id']
