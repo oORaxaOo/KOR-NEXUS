@@ -30,7 +30,6 @@ python3 -m py_compile core/server.py core/test_server.py scripts/qa-preview-play
 bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh
 if command -v node >/dev/null 2>&1; then node --check web/app.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
 bash scripts/verify-source.sh
-# Validate the file set required by PKGBUILD before packaging.
 python3 - <<'PYFILES'
 from pathlib import Path
 required = [
@@ -51,24 +50,39 @@ SECOND_HASH="$(sha256sum "kor-workstation-${VERSION}.tar.gz" | cut -d' ' -f1)"
 [[ "$FIRST_HASH" == "$SECOND_HASH" ]] || { echo 'FEHLER: Quellarchiv ist nicht reproduzierbar' >&2; exit 1; }
 echo "OK Reproduzierbarkeit: $FIRST_HASH"
 sha256sum -c SOURCE_SHA256SUMS.txt
-# Validate archive integrity and required members before running tests.
 python3 - "$VERSION" <<'PY'
 import sys,tarfile
 from pathlib import Path
 v=sys.argv[1]; p=Path(f'kor-workstation-{v}.tar.gz')
 with tarfile.open(p,'r:gz') as t:
- bad=t.getmembers()
- names={m.name.lstrip('./') for m in bad}
+ members=t.getmembers()
+ names={m.name.removeprefix('./') for m in members}
  required={'PKGBUILD','core/server.py','core/test_server.py','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/test-built-package-installation.sh'}
  missing=required-names
  if missing: raise SystemExit(f'FEHLER: Quellarchiv-Dateien fehlen: {sorted(missing)}')
- if t.getmembers() and any(m.mtime != 0 for m in t.getmembers()): raise SystemExit('FEHLER: Quellarchiv-Zeitstempel nicht deterministisch')
- print(f'OK Quellarchiv: {len(bad)} Einträge, erforderliche Dateien vorhanden, Zeitstempel normalisiert')
+ if any(m.mtime != 0 for m in members): raise SystemExit('FEHLER: Quellarchiv-Zeitstempel nicht deterministisch')
+ print(f'OK Quellarchiv: {len(members)} Einträge, erforderliche Dateien vorhanden, Zeitstempel normalisiert')
 PY
 if [[ "$MODE" != quick ]]; then
   python3 -m unittest -v core.test_server
-  if python3 scripts/qa-preview-playwright.py; then echo 'OK Browser-Smoke-Test'; else echo 'FEHLER Browser-Smoke-Test' >&2; exit 1; fi
-  bash scripts/test-installation.sh
+  BROWSER_TIMEOUT="${KOR_BROWSER_QA_TIMEOUT:-120}"
+  INSTALL_TIMEOUT="${KOR_INSTALL_TEST_TIMEOUT:-120}"
+  if ! [[ "$BROWSER_TIMEOUT" =~ ^[1-9][0-9]*$ && "$INSTALL_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+    echo 'FEHLER: QA-Timeouts müssen positive ganze Sekunden sein.' >&2
+    exit 2
+  fi
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo 'FEHLER: timeout fehlt; sichere Laufzeitbegrenzung nicht verfügbar.' >&2
+    exit 2
+  fi
+  if timeout --signal=TERM --kill-after=10s "${BROWSER_TIMEOUT}s" python3 scripts/qa-preview-playwright.py; then
+    echo 'OK Browser-Smoke-Test'
+  else
+    status=$?
+    echo "FEHLER Browser-Smoke-Test (Exit $status; Limit ${BROWSER_TIMEOUT}s)" >&2
+    exit "$status"
+  fi
+  timeout --signal=TERM --kill-after=10s "${INSTALL_TIMEOUT}s" bash scripts/test-installation.sh
 fi
 if [[ "$MODE" == package ]]; then
   if ! command -v makepkg >/dev/null 2>&1; then echo 'NICHT VERFÜGBAR: makepkg fehlt; kein Arch-Paket gebaut.' >&2; exit 3; fi
