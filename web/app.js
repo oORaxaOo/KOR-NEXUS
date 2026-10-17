@@ -214,7 +214,9 @@ function startEventPolling(){
 }
 function startLiveUpdates(){
  if('EventSource' in window){
-  const source=new EventSource('/api/events/stream?since='+encodeURIComponent(liveCursor));
+  let source;
+  try{source=new EventSource('/api/events/stream?since='+encodeURIComponent(liveCursor));}
+  catch(error){console.warn('SSE nicht verfügbar; verwende Ereignis-Polling.',error);startEventPolling();return;}
   liveSource=source;
   source.addEventListener('change',event=>{
    try{const item=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(item.event_id)||0);scheduleLiveRefresh(item);}
