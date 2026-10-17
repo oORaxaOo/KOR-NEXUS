@@ -186,10 +186,29 @@ class LlamaCppProvider(AIProvider):
 
 
 def configured_ai_provider():
-    """Return an explicitly opted-in local provider or the safe disabled default."""
-    if os.environ.get('KOR_NEXUS_AI_ENABLED', '').strip().lower() not in ('1', 'true', 'yes', 'on'):
+    """Return an explicitly opted-in local provider or the safe disabled default.
+
+    The user config is JSON (not shell code) at `$XDG_CONFIG_HOME/kor-nexus/ai.json`.
+    Environment variables can override a non-empty config value for temporary sessions.
+    """
+    configured = {}
+    override_path = os.environ.get('KOR_NEXUS_AI_CONFIG', '').strip()
+    config_home = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')).expanduser()
+    config_path = Path(override_path).expanduser() if override_path else config_home / 'kor-nexus' / 'ai.json'
+    try:
+        if config_path.is_file() and config_path.stat().st_size <= 65_536:
+            value = json.loads(config_path.read_text(encoding='utf-8'))
+            if isinstance(value, dict):
+                configured = value
+    except (OSError, UnicodeError, ValueError):
+        configured = {}
+
+    env_enabled = os.environ.get('KOR_NEXUS_AI_ENABLED', '').strip().lower()
+    enabled = env_enabled in ('1', 'true', 'yes', 'on') if env_enabled else configured.get('enabled') is True
+    if not enabled:
         return DisabledAIProvider()
-    model_path = os.environ.get('KOR_NEXUS_AI_MODEL_PATH', '').strip()
-    if not model_path:
-        return LlamaCppProvider(enabled=True)
-    return LlamaCppProvider(model_path=model_path, enabled=True)
+
+    model_path = os.environ.get('KOR_NEXUS_AI_MODEL_PATH', '').strip() or str(configured.get('model_path', '')).strip()
+    context_size = os.environ.get('KOR_NEXUS_AI_N_CTX', '').strip() or configured.get('context_size', 4096)
+    max_tokens = os.environ.get('KOR_NEXUS_AI_MAX_TOKENS', '').strip() or configured.get('max_tokens', 512)
+    return LlamaCppProvider(model_path=model_path, enabled=True, context_size=context_size, max_tokens=max_tokens)
