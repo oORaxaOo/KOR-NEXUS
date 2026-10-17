@@ -113,6 +113,11 @@ class CoreApiTests(unittest.TestCase):
             provider.close()
             self.assertFalse(provider.status()['model_loaded'])
 
+    def test_available_memory_preflight_handles_unsupported_sysconf(self):
+        from core.ai_provider import available_memory_bytes
+        with patch('core.ai_provider.os.sysconf',side_effect=[-1,4096]):
+            self.assertIsNone(available_memory_bytes())
+
     def test_llama_cpp_status_warns_when_model_file_exceeds_available_ram(self):
         from core.ai_provider import LlamaCppProvider
         with tempfile.TemporaryDirectory() as directory:
