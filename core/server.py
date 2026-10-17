@@ -227,6 +227,17 @@ def ensure_automation_schema(con):
     con.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_due ON scheduled_jobs(status,due_at)')
 
 
+def prune_event_journal(con):
+    """Apply the configured bounded retention window to the ephemeral replay journal."""
+    row=con.execute("SELECT value FROM settings WHERE key='event_retention_count'").fetchone()
+    try: keep=max(1000,min(1000000,int(row['value']) if row else 100000))
+    except (TypeError,ValueError): keep=100000
+    latest=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()['value'] or 0
+    cutoff=int(latest)-keep
+    if cutoff>0: con.execute('DELETE FROM event_journal WHERE event_id<=?',(cutoff,))
+    return keep
+
+
 def ensure_event_journal_schema(con):
     """Install the additive change journal and triggers without rewriting user data."""
     con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
@@ -240,6 +251,14 @@ def ensure_event_journal_schema(con):
         schema_version INTEGER NOT NULL DEFAULT 1
     )""")
     con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
+    con.execute("INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES('event_retention_count','100000',?)",(utcnow(),))
+    con.execute("""CREATE TRIGGER IF NOT EXISTS event_journal_retention
+        AFTER INSERT ON event_journal
+        BEGIN
+          DELETE FROM event_journal
+          WHERE event_id <= NEW.event_id - MAX(1000,MIN(1000000,COALESCE(
+              (SELECT CAST(value AS INTEGER) FROM settings WHERE key='event_retention_count'),100000)));
+        END""")
     entities = [
         ('tasks','task'),('task_dependencies','task_dependency'),('automation_rules','automation_rule'),('automation_runs','automation_run'),('action_proposals','action_proposal'),('scheduled_jobs','scheduled_job'),('records','record'),('units','unit'),
         ('resources','resource'),('resource_movements','resource_movement'),('resource_policies','resource_policy'),('alerts','alert'),('engine_runs','engine_run'),('project_assignments','assignment'),
@@ -261,6 +280,7 @@ def ensure_event_journal_schema(con):
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(9,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(10,?)',(utcnow(),))
+    prune_event_journal(con)
 
 
 def read_event_batch(con, since, limit=100):
@@ -1632,7 +1652,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         row=con.execute('SELECT * FROM automation_rules WHERE id=?',(ident,)).fetchone()
                     return self.send_json({'item':automation_rule_dict(row)})
                 if path=='/api/settings':
-                    allowed={'language','backup_keep','backup_interval_minutes','unit_label_singular','unit_label_plural'}
+                    allowed={'language','backup_keep','backup_interval_minutes','unit_label_singular','unit_label_plural','event_retention_count'}
                     if any(k not in allowed for k in data):return self.fail(400,'Unbekannte Einstellung.')
                     if 'language' in data and data['language'] not in ('de','en'):return self.fail(400,'Sprache muss de oder en sein.')
                     if any(k in data and (not str(data[k]).strip() or len(str(data[k]))>60) for k in ('unit_label_singular','unit_label_plural')):return self.fail(400,'Einheitenbezeichnung muss 1–60 Zeichen lang sein.')
@@ -1642,6 +1662,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     if 'backup_interval_minutes' in data:
                         try:data['backup_interval_minutes']=str(max(5,min(1440,int(data['backup_interval_minutes']))))
                         except Exception:return self.fail(400,'Backupintervall muss 5–1440 Minuten sein.')
+                    if 'event_retention_count' in data:
+                        try:data['event_retention_count']=str(max(1000,min(1000000,int(data['event_retention_count']))))
+                        except Exception:return self.fail(400,'Ereignis-Aufbewahrung muss 1000–1000000 sein.')
                     with db_connect() as con:
                         for k,v in data.items():con.execute('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',(k,str(v),now))
                     return self.send_json({'settings':get_settings()})
