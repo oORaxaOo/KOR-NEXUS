@@ -42,7 +42,7 @@ bash scripts/setup-local-ai.sh
 Bei einer Benutzerinstallation:
 
 ```bash
-bash "$HOME/.local/share/kor-workstation-app/scripts/setup-local-ai.sh"
+bash "${XDG_DATA_HOME:-$HOME/.local/share}/kor-workstation-app/scripts/setup-local-ai.sh"
 ```
 
 Das Skript fragt nach dem Pfad zur vorhandenen `.gguf`-Datei, installiert die optionale Bindung isoliert und legt die Konfiguration mit privaten Dateirechten unter `$XDG_CONFIG_HOME/kor-nexus/ai.json` (Standard: `~/.config/kor-nexus/ai.json`) ab. Danach KOR-NEXUS neu starten. Der Launcher erkennt die virtuelle Umgebung automatisch; ohne sie bleibt der Standardstart unverändert.
