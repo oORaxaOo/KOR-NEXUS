@@ -50,7 +50,7 @@ async function activate(id,refresh=true){
   $('#moduleDescription').textContent=sub;$('#recordTitle').placeholder=lang==='de'?'Titel des neuen Eintrags…':'Title of new entry…';$('#recordBody').placeholder=lang==='de'?'Notizen / Beschreibung …':'Notes / description…';$('#recordRegion').placeholder=lang==='de'?'Bereich / Region (optional)':'Area / region (optional)';$('#recordTags').placeholder=lang==='de'?'Tags (durch Kommas trennen)':'Tags (comma-separated)';$('#recordForm button').textContent=lang==='de'?'＋ EINTRAG SPEICHERN':'＋ SAVE ENTRY';await loadRecords(id);
  }
  if(id==='news'&&refresh)await refreshNews(false);
- if(id==='operations')await loadOperations();
+ if(id==='operations'){await loadOperations();await loadEngine();}
  if(id==='atlas')await renderMapLocations();
  if(id==='projects')await loadProjectDashboard();
  if(id==='workbench')await loadWorkbench();
@@ -234,6 +234,45 @@ function startLiveUpdates(){
 async function reloadAll(){const jobs=[loadTasks(),loadSettings(),loadBackups()];if(active==='atlas')jobs.push(renderAtlasRecords());else if(active!=='news')jobs.push(loadRecords(active));await Promise.all(jobs);}
 async function migrateLegacy(){try{if(localStorage.getItem('kor-workstation.migrated-v1'))return;const oldTasks=JSON.parse(localStorage.getItem('kor-workstation.tasks')||'null');const oldRecords=JSON.parse(localStorage.getItem('kor-workstation.records')||'null');if(!oldTasks&&!oldRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const currentTasks=(await api('/tasks')).items;let currentRecords=0;for(const m of ['atlas','projects','archive','simulation','database'])currentRecords+=(await api('/records?module='+m)).items.length;if(currentTasks.length||currentRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const data={schema_version:1,tasks:Array.isArray(oldTasks)?oldTasks:[],records:[]};if(oldRecords&&typeof oldRecords==='object')for(const [module,items] of Object.entries(oldRecords))if(['atlas','projects','archive','simulation','database'].includes(module)&&Array.isArray(items))for(const r of items)data.records.push({...r,module});await api('/import',{method:'POST',body:JSON.stringify({data})});localStorage.setItem('kor-workstation.migrated-v1','1');notify(lang==='de'?'Vorhandene Browserdaten in SQLite übernommen.':'Legacy browser data moved to SQLite.');}catch(e){console.warn('Legacy migration skipped:',e);}}
 let operationUnits=[],operationResources=[],operationProjects=[],operationAssignments=[];
+async function loadEngine(){
+ const [status,alerts,rules,proposals,jobs]=await Promise.all([
+  api('/engine/status'),api('/engine/alerts?status=all'),api('/automation/rules'),api('/actions/proposals?status=all'),api('/engine/jobs?status=all')
+ ]);
+ const c=status.counts||{};
+ $('#engineMetrics').innerHTML=[
+  ['OFFENE ALERTS',c.open_alerts??0],['AKTIVE REGELN',c.enabled_automation_rules??0],['OFFENE FREIGABEN',c.pending_action_proposals??0],['GEPLANTE JOBS',c.pending_scheduled_jobs??0]
+ ].map(([label,value])=>`<div class="dashboard-metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('');
+ const alertItems=alerts.items||[];
+ $('#engineAlerts').innerHTML=alertItems.length?alertItems.map(a=>`<article class="engine-item"><div class="engine-item-head"><strong>${esc(a.title)}</strong><span class="engine-severity severity-${esc(a.severity)}">${esc(String(a.severity).toUpperCase())}</span></div><p>${esc(a.message)}</p><div class="engine-item-foot"><span>${esc(a.status)} · ${esc(a.entity_type||'system')} ${esc(a.entity_id||'')}</span>${a.status==='open'?'<button class="btn ghost small" type="button" data-ack-alert="'+a.id+'">BESTÄTIGEN</button>':''}</div></article>`).join(''):'<div class="empty">Keine Alerts vorhanden. Eine Engine-Auswertung prüft die konfigurierten Mindestbestände.</div>';
+ const ruleItems=rules.items||[];$('#automationRuleCount').textContent=String(ruleItems.length).padStart(2,'0');
+ $('#automationRuleList').innerHTML=ruleItems.length?ruleItems.map(r=>`<article class="engine-item"><div class="engine-item-head"><strong>${esc(r.name)}</strong><span class="engine-severity ${r.enabled?'severity-info':'severity-muted'}">${r.enabled?'AKTIV':'INAKTIV'}</span></div><p>${esc(r.trigger_type)} → ${esc(r.action_type)} · Risiko: ${esc(r.risk_level)}</p><div class="engine-item-foot"><code>${esc(r.rule_key)}</code><button class="btn ghost small" type="button" data-toggle-rule="${r.id}" data-enabled="${r.enabled?'1':'0'}">${r.enabled?'DEAKTIVIEREN':'AKTIVIEREN'}</button></div></article>`).join(''):'<div class="empty">Noch keine Regeln. Importierte Regeln sind aus Sicherheitsgründen deaktiviert.</div>';
+ const proposalItems=proposals.items||[];
+ $('#actionProposalList').innerHTML=proposalItems.length?proposalItems.map(p=>`<article class="engine-item"><div class="engine-item-head"><strong>Bestandsanpassung #${p.id}</strong><span class="engine-severity severity-${p.status==='pending'?'critical':p.status==='executed'?'info':'muted'}">${esc(p.status.toUpperCase())}</span></div><p>Ressource #${esc(p.payload.resource_id)} · vorgeschlagene Änderung +${esc(p.payload.quantity_delta)} · ${esc(p.rationale)}</p><div class="engine-item-foot"><span>${esc(p.risk_level)} · ausdrücklich bestätigungspflichtig</span><div class="engine-actions">${p.status==='pending'?'<button class="btn small" type="button" data-proposal-approve="'+p.id+'">BESTÄTIGEN</button><button class="btn ghost small" type="button" data-proposal-reject="'+p.id+'">ABLEHNEN</button>':''}${p.status==='approved'?'<button class="btn small" type="button" data-proposal-execute="'+p.id+'">JETZT AUSFÜHREN</button>':''}</div></div></article>`).join(''):'<div class="empty">Keine Aktionsvorschläge offen oder protokolliert.</div>';
+ const jobItems=jobs.items||[];$('#scheduledJobCount').textContent=String(jobItems.filter(j=>j.status==='pending').length).padStart(2,'0');
+ $('#scheduledJobList').innerHTML=jobItems.length?jobItems.slice(0,8).map(j=>`<article class="engine-item"><div class="engine-item-head"><strong>${esc(j.job_type)}</strong><span class="engine-severity ${j.status==='completed'?'severity-info':'severity-muted'}">${esc(j.status)}</span></div><p>${esc(j.due_at)}</p><small>${esc(j.job_key)}</small></article>`).join(''):'<div class="empty">Keine geplanten Jobs.</div>';
+ $('#engineAlerts').querySelectorAll('[data-ack-alert]').forEach(b=>b.addEventListener('click',async()=>{try{await api('/engine/alerts/'+b.dataset.ackAlert+'/acknowledge',{method:'POST',body:'{}'});await loadEngine();notify('Alert bestätigt.')}catch(e){notify(e.message,'error')}}));
+ $('#automationRuleList').querySelectorAll('[data-toggle-rule]').forEach(b=>b.addEventListener('click',async()=>{try{await api('/automation/rules/'+b.dataset.toggleRule,{method:'PATCH',body:JSON.stringify({enabled:b.dataset.enabled!=='1'})});await loadEngine();notify('Automationsregel aktualisiert.')}catch(e){notify(e.message,'error')}}));
+ $('#actionProposalList').querySelectorAll('[data-proposal-approve]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Kritische Aktion ausdrücklich bestätigen? Die Änderung wird noch nicht ausgeführt.'))return;try{await api('/actions/proposals/'+b.dataset.proposalApprove+'/approve',{method:'POST',body:'{}'});await loadEngine();notify('Vorschlag bestätigt. Separates Ausführen bleibt erforderlich.')}catch(e){notify(e.message,'error')}}));
+ $('#actionProposalList').querySelectorAll('[data-proposal-reject]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Diesen kritischen Vorschlag ablehnen?'))return;try{await api('/actions/proposals/'+b.dataset.proposalReject+'/reject',{method:'POST',body:'{}'});await loadEngine();notify('Vorschlag abgelehnt.')}catch(e){notify(e.message,'error')}}));
+ $('#actionProposalList').querySelectorAll('[data-proposal-execute]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Bestätigte Bestandsänderung jetzt ausführen?'))return;try{await api('/actions/proposals/'+b.dataset.proposalExecute+'/execute',{method:'POST',body:'{}'});await loadEngine();await loadOperations();notify('Bestandsänderung ausgeführt.')}catch(e){notify(e.message,'error')}}));
+}
+function updateAutomationFields(){
+ const adjust=$('#automationAction').value==='adjust_resource';
+ $('#automationAdjustFields').hidden=!adjust;$('#automationTaskFields').hidden=adjust;
+ if(adjust)$('#automationTrigger').value='resource_low_stock';
+}
+function wireEngine(){
+ $('#engineEvaluate').addEventListener('click',async()=>{try{await api('/engine/evaluate',{method:'POST',body:'{}'});await loadEngine();notify('Engine-Auswertung abgeschlossen.')}catch(e){notify(e.message,'error')}});
+ $('#automationRun').addEventListener('click',async()=>{try{const result=await api('/automation/run',{method:'POST',body:'{}'});await loadEngine();notify('Automationen geprüft: '+(result.result.actions_executed||0)+' Routineaktion(en), '+(result.result.proposals_created||0)+' Vorschlag/Vorschläge.')}catch(e){notify(e.message,'error')}});
+ $('#runDueJobs').addEventListener('click',async()=>{try{const result=await api('/engine/jobs/run-due',{method:'POST',body:'{}'});await loadEngine();notify('Fällige Jobs verarbeitet: '+result.result.processed+'.')}catch(e){notify(e.message,'error')}});
+ $('#automationAction').addEventListener('change',updateAutomationFields);updateAutomationFields();
+ $('#automationRuleForm').addEventListener('submit',async e=>{e.preventDefault();const actionType=$('#automationAction').value;const action=actionType==='create_task'?{title_prefix:$('#automationTitlePrefix').value,area:$('#automationArea').value}:{quantity_delta:Number($('#automationQuantityDelta').value),notes:$('#automationActionNotes').value};const body={rule_key:$('#automationRuleKey').value.trim(),name:$('#automationRuleName').value.trim(),trigger_type:$('#automationTrigger').value,action_type:actionType,action,enabled:$('#automationEnabled').checked};try{await api('/automation/rules',{method:'POST',body:JSON.stringify(body)});e.target.reset();$('#automationArea').value='Logistik';updateAutomationFields();await loadEngine();notify('Automationsregel gespeichert.')}catch(err){notify(err.message,'error')}});
+ $('#scheduledJobDue').value=(()=>{const d=new Date(Date.now()+60000);d.setSeconds(0,0);const off=d.getTimezoneOffset()*60000;return new Date(d.getTime()-off).toISOString().slice(0,16)})();
+ $('#scheduledJobKey').value='job-'+Date.now();
+ $('#scheduledJobForm').addEventListener('submit',async e=>{e.preventDefault();try{await api('/engine/jobs',{method:'POST',body:JSON.stringify({job_key:$('#scheduledJobKey').value.trim(),job_type:$('#scheduledJobType').value,due_at:new Date($('#scheduledJobDue').value).toISOString()})});$('#scheduledJobKey').value='job-'+Date.now();await loadEngine();notify('Job eingeplant. Der lokale Scheduler prüft fällige Jobs alle 30 Sekunden.')}catch(err){notify(err.message,'error')}});
+}
+
+
 async function loadOperations(){
  try{
   const [u,r,a]=await Promise.all([api('/units'),api('/resources'),api('/assignments')]);
@@ -313,7 +352,7 @@ function wireCommandPalette(){
  render();
 }
 function wire(){
- wireOperations();wireProjectDashboard();wireMapPlanner();wireGeographicMap();
+ wireOperations();wireEngine();wireProjectDashboard();wireMapPlanner();wireGeographicMap();
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-module]');if(b)activate(b.dataset.module).catch(err=>notify(err.message,'error'))});
 $$('.region').forEach(b=>b.addEventListener('click',()=>chooseRegion(b.dataset.region)));
 $('#taskForm').addEventListener('submit',async e=>{e.preventDefault();const inp=$('#taskInput'),title=inp.value.trim();if(!title)return;try{await api('/tasks',{method:'POST',body:JSON.stringify({title,area:modules[active]?.label||'SYSTEM'})});inp.value='';await loadTasks();notify(lang==='de'?'Aufgabe gespeichert.':'Task saved.')}catch(err){notify(err.message,'error')}});

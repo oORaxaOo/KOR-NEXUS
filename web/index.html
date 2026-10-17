@@ -104,6 +104,28 @@
    <section class="ops-card assignment-card"><div class="panel-head compact"><div><div class="kicker">03 / PROJEKTVERKNÜPFUNG</div><h2>Zuweisungen</h2></div><span id="assignmentCount" class="region-label">00</span></div>
     <form id="assignmentForm" class="entry-form"><div class="entry-title-row"><select id="assignmentProject" class="input" required><option value="">Projekt auswählen…</option></select><select id="assignmentType" class="input"><option value="unit">Mitglied / Einheit</option><option value="resource">Ressource</option></select></div><div class="entry-title-row"><select id="assignmentTarget" class="input" required><option value="">Ziel auswählen…</option></select><input id="assignmentQuantity" class="input" type="number" min="0" step="any" value="1" required placeholder="Menge"></div><input id="assignmentNotes" class="input" maxlength="10000" placeholder="Aufgabe / Verwendungszweck (optional)"><button class="btn" type="submit">＋ ZUWEISUNG SPEICHERN</button></form><div id="assignmentList" class="ops-list"></div>
    </section>
+   <section id="engineView" class="ops-card engine-panel" aria-labelledby="engineHeading">
+    <div class="panel-head compact"><div><div class="kicker">04 / CORE ENGINE & AUTOMATION</div><h2 id="engineHeading">Kern-Engine</h2></div><span class="region-label">DETERMINISTISCH · LOKAL</span></div>
+    <p class="subtitle">Bestandswarnungen, freigegebene Routinen und geplante Jobs. Kritische Bestandsänderungen werden niemals automatisch ausgeführt: erst bestätigen, dann separat ausführen.</p>
+    <div id="engineMetrics" class="dashboard-metrics" aria-live="polite"><div class="dashboard-metric"><span>ENGINE</span><strong>—</strong></div></div>
+    <div class="engine-toolbar"><button id="engineEvaluate" class="btn" type="button">↻ ENGINE AUSWERTEN</button><button id="automationRun" class="btn ghost" type="button">AUTOMATIONEN AUSFÜHREN</button><button id="runDueJobs" class="btn ghost" type="button">FÄLLIGE JOBS AUSFÜHREN</button></div>
+    <div class="engine-grid">
+     <section class="ops-card"><div class="panel-head compact"><div><div class="kicker">01 / MONITORING</div><h3>Alerts</h3></div><span class="region-label">LIVE</span></div><div id="engineAlerts" class="ops-list"><div class="empty">Alerts werden geladen…</div></div></section>
+     <section class="ops-card"><div class="panel-head compact"><div><div class="kicker">02 / POLICY ENGINE</div><h3>Automationsregeln</h3></div><span id="automationRuleCount" class="region-label">00</span></div>
+      <form id="automationRuleForm" class="entry-form">
+       <div class="entry-title-row"><input id="automationRuleKey" class="input" required maxlength="80" pattern="[A-Za-z0-9._-]+" placeholder="Regelschlüssel"><input id="automationRuleName" class="input" required maxlength="180" placeholder="Regelname"></div>
+       <div class="entry-title-row"><select id="automationTrigger" class="input"><option value="resource_low_stock">Mindestbestand unterschritten</option><option value="task_overdue">Aufgabe überfällig</option><option value="task_blocked">Aufgabe blockiert</option><option value="manual">Manuell / täglich</option></select><select id="automationAction" class="input"><option value="create_task">Aufgabe erstellen (sicher)</option><option value="adjust_resource">Bestand anpassen (kritisch)</option></select></div>
+       <div id="automationTaskFields" class="engine-form-fields"><input id="automationTitlePrefix" class="input" maxlength="120" placeholder="Aufgabentitel-Präfix"><input id="automationArea" class="input" maxlength="80" value="Logistik" placeholder="Aufgabenbereich"></div>
+       <div id="automationAdjustFields" class="engine-form-fields" hidden><input id="automationQuantityDelta" class="input" type="number" min="0.000001" max="1000000000000" step="any" value="1" placeholder="Vorgeschlagene Menge"><input id="automationActionNotes" class="input" maxlength="1000" placeholder="Begründung / Notiz"></div>
+       <label class="engine-check"><input id="automationEnabled" type="checkbox"> Regel direkt aktivieren</label><button class="btn" type="submit">＋ REGEL ANLEGEN</button>
+      </form><div id="automationRuleList" class="ops-list"><div class="empty">Regeln werden geladen…</div></div>
+     </section>
+     <section class="ops-card"><div class="panel-head compact"><div><div class="kicker">03 / HUMAN APPROVAL</div><h3>Aktionsvorschläge</h3></div><span class="region-label">FREIGABE</span></div><div id="actionProposalList" class="ops-list"><div class="empty">Vorschläge werden geladen…</div></div></section>
+     <section class="ops-card"><div class="panel-head compact"><div><div class="kicker">04 / SCHEDULER</div><h3>Geplante Jobs</h3></div><span id="scheduledJobCount" class="region-label">00</span></div>
+      <form id="scheduledJobForm" class="entry-form"><input id="scheduledJobKey" class="input" required maxlength="120" placeholder="Eindeutiger Jobschlüssel"><div class="entry-title-row"><select id="scheduledJobType" class="input"><option value="engine_evaluate">Engine-Auswertung</option><option value="run_automations">Automationen ausführen</option></select><input id="scheduledJobDue" class="input" type="datetime-local" required></div><button class="btn ghost" type="submit">＋ JOB PLANEN</button></form><div id="scheduledJobList" class="ops-list"><div class="empty">Jobs werden geladen…</div></div>
+     </section>
+    </div>
+   </section>
   </div>
  </section>
  <div class="footnote">KOR-NEXUS // LOKALER WORKSPACE · SQLITE · AUTOMATISCHE BACKUPS · RSS NUR BEI VERFÜGBARER VERBINDUNG</div>
