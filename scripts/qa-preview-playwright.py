@@ -191,11 +191,12 @@ with sync_playwright() as p:
   page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='en'",timeout=3000);page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='de'",timeout=3000)
   page.locator('#settingsBtn').click();assert 'open' in page.locator('#settingsModal').get_attribute('class')
   import json as _json
+  tasks_before_preview=page.evaluate('__state.tasks.map(t=>t.title)')
   valid_payload={'schema_version':2,'tasks':[{'id':1,'title':'Vorschauaufgabe'}],'records':[],'map_locations':[],'units':[],'resources':[],'project_assignments':[],'settings':{},'geodata':{},'news':{'items':[],'sources':[]}}
   page.locator('#importFile').set_input_files({'name':'preview-valid.json','mimeType':'application/json','buffer':_json.dumps(valid_payload).encode()})
   page.wait_for_function("document.querySelector('#importPreview').hidden===false && document.querySelector('#importPreviewStatus').classList.contains('valid')",timeout=3000)
   assert page.locator('#importPreviewSummary').inner_text().find('Vorschauaufgabe')==-1
-  assert page.locator('#confirmImport').is_enabled();assert '1' in page.locator('#importPreviewSummary').inner_text();assert page.evaluate('__state.tasks.length===1')
+  assert page.locator('#confirmImport').is_enabled();assert '1' in page.locator('#importPreviewSummary').inner_text();assert page.evaluate('__state.tasks.map(t=>t.title)')==tasks_before_preview, 'Importvorschau darf vorhandene Aufgaben nicht verändern'
   invalid_payload={'schema_version':99,'tasks':[],'records':[]}
   page.locator('#importFile').set_input_files({'name':'preview-invalid.json','mimeType':'application/json','buffer':_json.dumps(invalid_payload).encode()})
   page.wait_for_function("document.querySelector('#importPreviewStatus').classList.contains('invalid')",timeout=3000)
