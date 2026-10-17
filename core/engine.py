@@ -14,6 +14,35 @@ def _count(con, sql, params=()):
 
 
 
+
+def run_due_scheduled_jobs(con, now):
+    """Run due one-shot jobs atomically; failed jobs are audited and never partially applied."""
+    jobs=con.execute("SELECT * FROM scheduled_jobs WHERE status='pending' AND due_at<=? ORDER BY due_at,id",(now,)).fetchall()
+    summary={'processed':0,'completed':0,'failed':0,'llm_used':False}
+    for job in jobs:
+        con.execute("UPDATE scheduled_jobs SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",(now,job['id']))
+        con.execute('SAVEPOINT scheduled_job')
+        try:
+            if job['job_type']=='engine_evaluate':
+                result=evaluate_engine(con,now)
+            elif job['job_type']=='run_automations':
+                result=run_automations(con,now)
+            else:
+                raise ValueError('Unbekannter Jobtyp.')
+            result_json=json.dumps(result,ensure_ascii=False,separators=(',',':'))
+        except Exception as exc:
+            con.execute('ROLLBACK TO SAVEPOINT scheduled_job')
+            con.execute('RELEASE SAVEPOINT scheduled_job')
+            con.execute("UPDATE scheduled_jobs SET status='failed',last_error=?,result_json=?,updated_at=? WHERE id=?",(f'{type(exc).__name__}: {exc}'[:500],'{}',now,job['id']))
+            summary['failed']+=1
+        else:
+            con.execute('RELEASE SAVEPOINT scheduled_job')
+            con.execute("UPDATE scheduled_jobs SET status='completed',last_error=NULL,result_json=?,updated_at=? WHERE id=?",(result_json,now,job['id']))
+            summary['completed']+=1
+        summary['processed']+=1
+    return summary
+
+
 def run_automations(con, now):
     """Run enabled allowlisted rules once per entity per UTC day; critical actions only create proposals."""
     today=str(now)[:10]

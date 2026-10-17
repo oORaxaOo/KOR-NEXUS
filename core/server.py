@@ -8,10 +8,10 @@ from xml.etree import ElementTree as ET
 
 if __package__:
     from .ai_provider import DisabledAIProvider
-    from .engine import build_engine_status, evaluate_engine, run_automations
+    from .engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
 else:
     from ai_provider import DisabledAIProvider
-    from engine import build_engine_status, evaluate_engine, run_automations
+    from engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
 
 AI_PROVIDER = DisabledAIProvider()
 
@@ -215,9 +215,13 @@ def ensure_automation_schema(con):
         status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed','cancelled')),
         attempts INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
+        result_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""")
+    job_columns={row['name'] for row in con.execute('PRAGMA table_info(scheduled_jobs)')}
+    if 'result_json' not in job_columns: con.execute("ALTER TABLE scheduled_jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
+    con.execute("UPDATE scheduled_jobs SET status='pending',last_error='Wiederaufnahme nach Prozessneustart',updated_at=? WHERE status='running'",(utcnow(),))
     con.execute('CREATE INDEX IF NOT EXISTS idx_automation_rules_enabled ON automation_rules(enabled,trigger_type)')
     con.execute('CREATE INDEX IF NOT EXISTS idx_action_proposals_status ON action_proposals(status,created_at DESC)')
     con.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_due ON scheduled_jobs(status,due_at)')
@@ -1126,6 +1130,18 @@ class AppHandler(BaseHTTPRequestHandler):
                     else:
                         rows=[dict(r) for r in con.execute('SELECT * FROM alerts WHERE status=? ORDER BY updated_at DESC,id DESC LIMIT 500',(status_filter,))]
                 return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
+            if path=='/api/engine/jobs':
+                status_filter=q.get('status',['pending'])[0]
+                if status_filter not in ('pending','running','completed','failed','cancelled','all'):return self.fail(400,'Ungültiger Job-Status.')
+                with db_connect() as con:
+                    if status_filter=='all': rows=[dict(r) for r in con.execute('SELECT * FROM scheduled_jobs ORDER BY due_at,id LIMIT 500')]
+                    else: rows=[dict(r) for r in con.execute('SELECT * FROM scheduled_jobs WHERE status=? ORDER BY due_at,id LIMIT 500',(status_filter,))]
+                for row in rows:
+                    try: row['payload']=json.loads(row.pop('payload_json') or '{}')
+                    except (ValueError,TypeError): row['payload']={}
+                    try: row['result']=json.loads(row.pop('result_json') or '{}')
+                    except (ValueError,TypeError): row['result']={}
+                return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
             if path=='/api/automation/rules':
                 with db_connect() as con: rows=[automation_rule_dict(r) for r in con.execute('SELECT * FROM automation_rules ORDER BY id DESC')]
                 return self.send_json({'items':rows,'count':len(rows)})
@@ -1249,6 +1265,28 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json({'ok':True,'available':True,'feature_count':len(features),'recognized_state_names':len(found & valid_names),'note':'Geometrien lokal in SQLite und als GeoJSON-Datei gespeichert; Quelle, Lizenz und Namen vor Nutzung prüfen.'},201)
         with _db_lock:
             try:
+                if path=='/api/engine/jobs':
+                    job_key=str(data.get('job_key','')).strip()
+                    job_type=str(data.get('job_type','')).strip()
+                    if not re.fullmatch(r'[A-Za-z0-9._:-]{1,120}',job_key):return self.fail(400,'job_key muss 1–120 sichere Zeichen enthalten.')
+                    if job_type not in ('engine_evaluate','run_automations'):return self.fail(400,'Unbekannter geplanter Jobtyp.')
+                    payload=data.get('payload',{})
+                    if not isinstance(payload,dict) or payload:return self.fail(400,'Geplante Jobs akzeptieren derzeit keine Zusatzdaten.')
+                    try:
+                        due_raw=str(data.get('due_at','')).strip()
+                        due_dt=dt.datetime.fromisoformat(due_raw.replace('Z','+00:00'))
+                        if due_dt.tzinfo is None:return self.fail(400,'due_at muss eine Zeitzone enthalten.')
+                        due_at=due_dt.astimezone(dt.timezone.utc).isoformat(timespec='seconds')
+                    except (ValueError,TypeError):return self.fail(400,'due_at muss ein ISO-8601-Zeitstempel mit Zeitzone sein.')
+                    with db_connect() as con:
+                        if con.execute('SELECT 1 FROM scheduled_jobs WHERE job_key=?',(job_key,)).fetchone():return self.fail(409,'job_key existiert bereits.')
+                        cur=con.execute("INSERT INTO scheduled_jobs(job_key,job_type,payload_json,due_at,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)",(job_key,job_type,'{}',due_at,now,now))
+                        row=con.execute('SELECT * FROM scheduled_jobs WHERE id=?',(cur.lastrowid,)).fetchone()
+                    item=dict(row);item['payload']=json.loads(item.pop('payload_json'));item['result']=json.loads(item.pop('result_json'))
+                    return self.send_json({'item':item},201)
+                if path=='/api/engine/jobs/run-due':
+                    with db_connect() as con: result=run_due_scheduled_jobs(con,utcnow())
+                    return self.send_json({'ok':True,'result':result})
                 if path=='/api/automation/rules':
                     try: values=normalize_automation_rule(data)
                     except ValueError as exc:return self.fail(400,str(exc))
@@ -1741,8 +1779,13 @@ def main():
         threading.Timer(0.35,lambda:open_app_or_report(url)).start()
     stop_backups=threading.Event();server.shutdown_event=threading.Event()
     def backup_loop():
-        while not stop_backups.wait(30):maybe_backup()
-    backup_thread=threading.Thread(target=backup_loop,name='kor-backup-scheduler',daemon=True);backup_thread.start()
+        while not stop_backups.wait(30):
+            try: maybe_backup()
+            except Exception as exc: print(f'[KOR] Automatisches Backup fehlgeschlagen: {exc}',file=sys.stderr)
+            try:
+                with db_connect() as con: run_due_scheduled_jobs(con,utcnow())
+            except Exception as exc: print(f'[KOR] Geplante Engine-Jobs fehlgeschlagen: {exc}',file=sys.stderr)
+    backup_thread=threading.Thread(target=backup_loop,name='kor-background-scheduler',daemon=True);backup_thread.start()
     try:
         while not server.shutdown_event.is_set():server.handle_request()
     except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')

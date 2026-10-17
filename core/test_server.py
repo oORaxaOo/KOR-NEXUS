@@ -63,6 +63,27 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_scheduled_jobs_run_due_once_and_leave_future_jobs_pending(self):
+        now=app.utcnow()
+        status,created=self.req('/api/engine/jobs','POST',{'job_key':'qa-evaluate-now','job_type':'engine_evaluate','due_at':now})
+        self.assertEqual(status,201)
+        self.assertEqual(created['item']['status'],'pending')
+        self.assertEqual(self.req('/api/engine/jobs','POST',{'job_key':'qa-evaluate-now','job_type':'engine_evaluate','due_at':now})[0],409)
+        status,future=self.req('/api/engine/jobs','POST',{'job_key':'qa-future-automation','job_type':'run_automations','due_at':'2099-01-01T00:00:00Z'})
+        self.assertEqual(status,201)
+        status,run=self.req('/api/engine/jobs/run-due','POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(run['result']['processed'],1)
+        self.assertEqual(run['result']['completed'],1)
+        status,completed=self.req('/api/engine/jobs?status=completed')
+        self.assertEqual(status,200)
+        self.assertEqual(completed['count'],1)
+        status,pending=self.req('/api/engine/jobs?status=pending')
+        self.assertEqual(status,200)
+        self.assertEqual(pending['count'],1)
+        status,again=self.req('/api/engine/jobs/run-due','POST',{})
+        self.assertEqual(again['result']['processed'],0)
+
     def test_automation_rules_are_idempotent_and_critical_actions_require_approval(self):
         _,resource=self.req('/api/resources','POST',{'name':'Automation-Ressource','quantity':1,'unit':'Kisten'})
         resource_id=resource['item']['id']
