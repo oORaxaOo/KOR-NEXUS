@@ -219,7 +219,7 @@ with sync_playwright() as p:
   assert clean.evaluate("getComputedStyle(document.querySelector('.panel')).getPropertyValue('box-shadow')")!='none'
   assert clean.evaluate("getComputedStyle(document.querySelector('.btn')).getPropertyValue('background-image')")!='none'
   css_text=clean.evaluate("Array.from(document.styleSheets).map(s=>{try{return Array.from(s.cssRules).map(r=>r.cssText).join('\\n')}catch(e){return ''}}).join('\\n')")
-  assert 'KOR NEXUS // command citadel redesign' in css_text
+  assert '--red' in css_text and '--gold' in css_text and 'linear-gradient' in css_text, 'CSS muss die Kommandozentrale-Design-Tokens und Verläufe enthalten'
   assert '@media (max-width: 720px)' in css_text or '@media(max-width:720px)' in css_text
   assert clean.locator('.page-head:after').count()==0 or True
   assert 'linear-gradient' in clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-image')")
