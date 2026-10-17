@@ -7,13 +7,13 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 if __package__:
-    from .ai_provider import DisabledAIProvider
+    from .ai_provider import AIUnavailableError, configured_ai_provider
     from .engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
 else:
-    from ai_provider import DisabledAIProvider
+    from ai_provider import AIUnavailableError, configured_ai_provider
     from engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
 
-AI_PROVIDER = DisabledAIProvider()
+AI_PROVIDER = configured_ai_provider()
 
 
 
@@ -1282,8 +1282,22 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         try:data=self.read_body()
         except ValueError as e:return self.fail(400,str(e))
-        if path!='/api/import/preview': maybe_backup()
         now=utcnow()
+        if path=='/api/ai/generate':
+            prompt=data.get('prompt')
+            context=data.get('context')
+            if not isinstance(prompt,str) or not prompt.strip():return self.fail(400,'Prompt muss ein nichtleerer Text sein.')
+            if len(prompt)>12000:return self.fail(400,'Prompt darf höchstens 12.000 Zeichen enthalten.')
+            if context is not None and not isinstance(context,(dict,list)):return self.fail(400,'Kontext muss ein JSON-Objekt oder eine JSON-Liste sein.')
+            try:
+                if context is not None and len(json.dumps(context,ensure_ascii=False,separators=(',',':'),allow_nan=False))>12000:return self.fail(400,'Kontext darf höchstens 12.000 Zeichen enthalten.')
+                response=AI_PROVIDER.generate(prompt,context)
+            except (TypeError,ValueError):return self.fail(400,'Prompt oder Kontext enthält ungültige Daten.')
+            except AIUnavailableError as exc:return self.fail(503,str(exc))
+            except Exception:return self.fail(502,'Die lokale KI-Anfrage ist fehlgeschlagen.')
+            provider_status=AI_PROVIDER.status()
+            return self.send_json({'ok':True,'provider':provider_status.get('provider','unknown'),'response':response})
+        if path!='/api/import/preview': maybe_backup()
         if path=='/api/import/preview':
             return self.send_json(portable_import_preview(data.get('data')))
         if path=='/api/geodata/germany-states':
