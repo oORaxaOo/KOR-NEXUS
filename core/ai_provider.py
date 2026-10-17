@@ -20,6 +20,18 @@ MIN_OUTPUT_TOKENS = 32
 MAX_OUTPUT_TOKENS = 2_048
 
 
+def available_memory_bytes():
+    """Return currently available physical RAM on supported POSIX hosts, or None."""
+    if os.name != 'posix':
+        return None
+    try:
+        pages = int(os.sysconf('SC_AVPHYS_PAGES'))
+        page_size = int(os.sysconf('SC_PAGE_SIZE'))
+        return max(0, pages * page_size)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
 class AIUnavailableError(RuntimeError):
     """Raised when a caller requests generation without an active provider."""
 
@@ -97,6 +109,9 @@ class LlamaCppProvider(AIProvider):
     def status(self):
         path = self._resolved_model_path()
         binding = self._binding_available()
+        model_size = path.stat().st_size if path is not None else None
+        available_ram = available_memory_bytes() if path is not None and self.enabled else None
+        memory_warning = bool(model_size is not None and available_ram is not None and model_size > available_ram)
         if not self.enabled:
             reason = 'Lokale KI ist standardmäßig deaktiviert. Aktivierung erfolgt ausdrücklich über KOR_NEXUS_AI_ENABLED=1.'
         elif path is None:
@@ -105,12 +120,17 @@ class LlamaCppProvider(AIProvider):
             reason = 'Optionale Laufzeit llama-cpp-python ist nicht installiert.'
         else:
             reason = 'Lokales Modell ist konfiguriert; es wird erst bei der ersten Anfrage geladen.'
+        if memory_warning:
+            reason += ' Warnung: Die Modelldatei ist größer als der aktuell verfügbare RAM; Laden kann scheitern oder stark auslagern. Kontextspeicher und Backend benötigen zusätzlichen Speicher.'
         return {
             'provider': 'llama.cpp',
             'enabled': self.enabled,
             'available': bool(self.enabled and path is not None and binding),
             'model_loaded': self._model is not None,
             'model_name': path.name if path is not None else None,
+            'model_size_bytes': model_size,
+            'available_memory_bytes': available_ram,
+            'memory_warning': memory_warning,
             'context_size': self.context_size,
             'max_tokens': self.max_tokens,
             'reason': reason,
