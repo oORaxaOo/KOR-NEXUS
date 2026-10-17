@@ -232,7 +232,7 @@ function tryStartEventSource(){
   catch(error){console.warn('Ungültiges Live-Ereignis ignoriert',error);}
  });
  source.addEventListener('reset_required',event=>{
-  try{const data=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(data.cursor)||0);}catch{}
+  try{const data=JSON.parse(event.data);liveCursor=Math.max(0,Number(data.cursor)||0);}catch{}
   clearTimeout(liveRefreshTimer);
   liveRefreshTimer=setTimeout(()=>refreshAllLiveViews().catch(error=>console.warn('Live-Snapshot fehlgeschlagen',error)),0);
  });

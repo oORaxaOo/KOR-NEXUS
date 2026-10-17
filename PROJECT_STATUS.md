@@ -13,7 +13,8 @@ Stand: 2026-10-17 · Version 1.20.0 · Schwerpunkt: Core Engine, Live-Updates un
 - [x] JSON-Schema 2, Backup/Restore und ältere Datenbankstände bleiben durch additive Migrationen und Kompatibilitätstests unterstützt.
 - [x] Letzter grüner Release-Gate: 47 API-Tests, Browser-Smoke-Test sowie nativer Arch-Paketbau und isolierter Installationstest erfolgreich ([Workflow](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39032128627)).
 - [ ] Native llama.cpp-Laufzeit und Modellverwaltung — bewusst zurückgestellt, bis der Kern abschließend stabilisiert ist.
-- [ ] Eine echte Ende-zu-Ende-Prüfung mit mehreren gleichzeitigen SSE-Clients und Rückwechsel von Polling auf SSE steht noch aus.
+- [x] Client wechselt nach Polling-Fallback periodisch zurück zu SSE, dedupliziert Ereignisse und setzt den Cursor bei einem Reset auch nach einer Datenbankwiederherstellung korrekt zurück.
+- [ ] Eine echte Ende-zu-Ende-Prüfung mit mehreren gleichzeitigen SSE-Clients steht noch aus.
 - [x] Alle Änderungen bleiben auf dem Arbeitsbranch; `main` wurde nicht direkt verändert.
 
 
