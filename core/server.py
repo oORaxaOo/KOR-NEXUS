@@ -754,6 +754,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if path.startswith('/api/'):
             maybe_backup()
             if path=='/api/events':
+                if q.get('snapshot',['0'])[0]=='1':
+                    with db_connect() as con:
+                        latest=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()['value'] or 0
+                    return self.send_json({'events':[],'cursor':latest,'latest_event_id':latest,'reset_required':False})
                 try: since=max(0,int(q.get('since',['0'])[0])); limit=max(1,min(500,int(q.get('limit',['100'])[0])))
                 except (TypeError,ValueError): return self.fail(400,'Ungültiger Ereignis-Cursor oder Seitenumfang.')
                 with db_connect() as con: return self.send_json(read_event_batch(con,since,limit))
