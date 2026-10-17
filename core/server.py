@@ -643,21 +643,21 @@ def apply_portable_import(con, payload, now):
             cur=con.execute('INSERT INTO units(name,role,status,biography,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(u['name']).strip(),str(u.get('role',''))[:120],str(u.get('status','aktiv'))[:40],str(u.get('biography',''))[:100000],str(u.get('region',''))[:180],json.dumps(u.get('tags',[]),ensure_ascii=False),str(u.get('created_at',now))[:80],str(u.get('updated_at',now))[:80]))
             if u.get('id') is not None: unit_map[str(u['id'])]=cur.lastrowid
         movement_resource_ids={str(m.get('resource_id')) for m in data.get('resource_movements',[]) if m.get('resource_id') is not None}
-    for r in data['resources']:
+        for r in data['resources']:
             cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(r['name']).strip(),str(r.get('category','Allgemein'))[:80],float(r.get('quantity',0)),str(r.get('unit','Stück'))[:40],str(r.get('location',''))[:180],str(r.get('notes',''))[:10000],str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
             resource_row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
             if str(r.get('id')) not in movement_resource_ids:
                 con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,resource_row['name'],'import_snapshot',resource_row['quantity'],resource_row['quantity'],resource_row['unit'],'Bestand aus Schema-2-Import übernommen; historische Bewegungen sind unbekannt.','import-snapshot:'+uuid.uuid4().hex,now))
             if r.get('id') is not None: resource_map[str(r['id'])]=cur.lastrowid
-    movement_map={}
-    for movement in data.get('resource_movements',[]):
-        source_resource=movement.get('resource_id')
-        mapped_resource=resource_map.get(str(source_resource)) if source_resource not in (None,'') else None
-        reverse_source=movement.get('reverses_movement_id')
-        mapped_reverse=movement_map.get(str(reverse_source)) if reverse_source not in (None,'') else None
-        cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,reverses_movement_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
-            (mapped_resource,str(movement['resource_name'])[:180],str(movement['movement_type']),float(movement['quantity_delta']),float(movement['quantity_after']),str(movement['unit'])[:40],str(movement.get('notes',''))[:2000],'portable-import:'+uuid.uuid4().hex,mapped_reverse,str(movement['created_at'])[:80]))
-        movement_map[str(movement['id'])]=cur.lastrowid
+        movement_map={}
+        for movement in data.get('resource_movements',[]):
+            source_resource=movement.get('resource_id')
+            mapped_resource=resource_map.get(str(source_resource)) if source_resource not in (None,'') else None
+            reverse_source=movement.get('reverses_movement_id')
+            mapped_reverse=movement_map.get(str(reverse_source)) if reverse_source not in (None,'') else None
+            cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,reverses_movement_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (mapped_resource,str(movement['resource_name'])[:180],str(movement['movement_type']),float(movement['quantity_delta']),float(movement['quantity_after']),str(movement['unit'])[:40],str(movement.get('notes',''))[:2000],'portable-import:'+uuid.uuid4().hex,mapped_reverse,str(movement['created_at'])[:80]))
+            movement_map[str(movement['id'])]=cur.lastrowid
     def resolve_ref(item,field,mapping,legacy_name,lookup):
         if item.get(field) not in (None,''):
             key=str(item[field])
