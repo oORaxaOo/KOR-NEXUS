@@ -208,6 +208,55 @@ function wireOperations(){
  $('#assignmentType').addEventListener('change',updateAssignmentTargets);
  $('#assignmentForm').addEventListener('submit',async e=>{e.preventDefault();const type=$('#assignmentType').value,target=$('#assignmentTarget').value;try{await api('/assignments',{method:'POST',body:JSON.stringify({project_id:Number($('#assignmentProject').value),[type==='unit'?'unit_id':'resource_id']:Number(target),quantity:$('#assignmentQuantity').value,notes:$('#assignmentNotes').value})});$('#assignmentNotes').value='';await loadOperations();notify('Projektzuweisung gespeichert.')}catch(err){notify(err.message,'error')}});
 }
+const COMMAND_DECK=[
+ {label:'ATLAS',detail:'Weltlage, Standorte und Kartenmarker',terms:'karte weltlage standort marker',module:'atlas'},
+ {label:'PROJEKTE',detail:'Planung, Status und Aufgabenbeziehungen',terms:'projekt planung status',module:'projects'},
+ {label:'ARCHIV',detail:'Kor-Wissensbasis und gespeicherte Einträge',terms:'wissen archiv grundsätze',module:'archive'},
+ {label:'SIMULATION',detail:'Szenarien und Modelle',terms:'simulation szenario modell',module:'simulation'},
+ {label:'DATENBANK',detail:'Lokale Datensätze und strukturierte Daten',terms:'daten datenbank datensatz',module:'database'},
+ {label:'NACHRICHTEN',detail:'RSS-Feeds und aktuelle Meldungen',terms:'rss news nachrichten feed',module:'news'},
+ {label:'PERSONAL & LOGISTIK',detail:'Mitglieder, Ressourcen und Zuweisungen',terms:'personal logistik mitglieder ressourcen',module:'operations'},
+ {label:'DIGITALE WERKBANK',detail:'Notizen, Aufgaben und Schnellzugriff',terms:'werkbank notiz aufgabe schnellzugriff',module:'workbench'},
+ {label:'AUFGABE ERFASSEN',detail:'Direkt zum Aufgabenformular',terms:'neu aufgabe task erstellen',action:'task'},
+ {label:'NOTIZ ERFASSEN',detail:'Direkt zum Notizeditor',terms:'neu notiz gedanke speichern',action:'note'},
+ {label:'RSS AKTUALISIEREN',detail:'Nachrichten öffnen und Feeds aktualisieren',terms:'rss refresh aktualisieren feed',action:'refresh-news'},
+ {label:'EINSTELLUNGEN',detail:'Sicherung, Import und Systemeinstellungen',terms:'backup import sprache einstellungen',action:'settings'}
+];
+function wireCommandPalette(){
+ const dialog=$('#commandPalette'),search=$('#commandSearch'),results=$('#commandResults');
+ if(!dialog||!search||!results)return;
+ let visible=[];
+ function render(){
+  const q=search.value.trim().toLocaleLowerCase();
+  visible=COMMAND_DECK.filter(item=>!q||[item.label,item.detail,item.terms].join(' ').toLocaleLowerCase().includes(q));
+  results.innerHTML=visible.length?visible.map((item,i)=>'<button type="button" class="command-result" role="listitem" data-command-index="'+i+'"><span class="command-result-glyph">'+(item.module?'⌖':item.action==='settings'?'⚙':'＋')+'</span><span class="command-result-copy"><strong>'+esc(item.label)+'</strong><small>'+esc(item.detail)+'</small></span><span class="command-result-enter">↵</span></button>').join(''):'<div class="empty command-empty">Keine passenden Befehle.</div>';
+  results.querySelectorAll('[data-command-index]').forEach(button=>button.addEventListener('click',()=>runCommand(visible[Number(button.dataset.commandIndex)])));
+ }
+ async function runCommand(item){
+  if(!item)return;
+  dialog.close();search.value='';
+  if(item.module){await activate(item.module);return;}
+  if(item.action==='settings'){$('#settingsBtn').click();return;}
+  if(item.action==='refresh-news'){await activate('news');await refreshNews(false);return;}
+  if(item.action==='task'){await activate('workbench');$('#workbenchTaskTitle').focus();return;}
+  if(item.action==='note'){await activate('workbench');$('#workbenchNoteTitle').focus();}
+ }
+ function open(){if(!dialog.open)dialog.showModal();search.value='';render();search.focus();}
+ $('#commandPaletteBtn').addEventListener('click',open);
+ $('#closeCommandPalette').addEventListener('click',()=>dialog.close());
+ search.addEventListener('input',render);
+ search.addEventListener('keydown',e=>{
+  const buttons=[...results.querySelectorAll('[data-command-index]')];
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+   e.preventDefault();if(!buttons.length)return;
+   const active=buttons.indexOf(document.activeElement);
+   buttons[(active+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();
+  }else if(e.key==='Enter'&&buttons.length){e.preventDefault();const active=buttons.indexOf(document.activeElement);runCommand(visible[active>=0?active:0]);}
+ });
+ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();open();}});
+ dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
+ render();
+}
 function wire(){
  wireOperations();wireProjectDashboard();wireMapPlanner();wireGeographicMap();
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-module]');if(b)activate(b.dataset.module).catch(err=>notify(err.message,'error'))});
@@ -231,6 +280,6 @@ $('#cancelImport').addEventListener('click',clearImportPreview);
 $('#confirmImport').addEventListener('click',async()=>{if(!pendingImportData||$('#confirmImport').disabled)return;const button=$('#confirmImport');button.disabled=true;button.textContent=lang==='de'?'IMPORT LÄUFT…':'IMPORTING…';try{const r=await api('/import',{method:'POST',body:JSON.stringify({data:pendingImportData})});notify((lang==='de'?'Import abgeschlossen: ':'Import complete: ')+r.tasks+' tasks, '+r.records+' records, '+(r.units??0)+' profiles, '+(r.resources??0)+' resources, '+(r.project_assignments??0)+' assignments.');clearImportPreview();await reloadAll();await loadBackups();}catch(err){notify((lang==='de'?'Import fehlgeschlagen: ':'Import failed: ')+err.message,'error');button.disabled=false;button.textContent=lang==='de'?'ERNEUT VERSUCHEN — DATEN ERSETZEN':'RETRY — REPLACE DATA';}});
 window.addEventListener('online',()=>{$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';$('#offlineNote').hidden=true});window.addEventListener('offline',()=>{$('#connection').textContent=lang==='de'?'● OFFLINE':'● OFFLINE';$('#offlineNote').hidden=false});
 }
-async function init(){wire();renderStates();dateLabel();try{health=await api('/health');$('#coreState').textContent='● READY';$('#dbState').textContent='SQLITE';$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';await loadSettings();await migrateLegacy();await Promise.all([loadTasks(),renderAtlasRecords(),loadBackups(),renderMapLocations(),loadGeographicData()]);await loadNewsCache();setLanguage();await chooseRegion(selectedRegion);document.documentElement.dataset.appReady='true';window.__KOR_APP_READY__=true;}catch(e){$('#coreState').textContent='● FEHLER';$('#connection').textContent='● CORE OFFLINE';$('#offlineNote').hidden=false;notify((lang==='de'?'Kern konnte nicht initialisiert werden: ':'Core initialization failed: ')+e.message,'error');}}
+async function init(){wire();wireCommandPalette();renderStates();dateLabel();try{health=await api('/health');$('#coreState').textContent='● READY';$('#dbState').textContent='SQLITE';$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';await loadSettings();await migrateLegacy();await Promise.all([loadTasks(),renderAtlasRecords(),loadBackups(),renderMapLocations(),loadGeographicData()]);await loadNewsCache();setLanguage();await chooseRegion(selectedRegion);document.documentElement.dataset.appReady='true';window.__KOR_APP_READY__=true;}catch(e){$('#coreState').textContent='● FEHLER';$('#connection').textContent='● CORE OFFLINE';$('#offlineNote').hidden=false;notify((lang==='de'?'Kern konnte nicht initialisiert werden: ':'Core initialization failed: ')+e.message,'error');}}
 init();
 })();

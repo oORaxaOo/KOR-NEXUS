@@ -8,8 +8,16 @@
 <header class="topbar">
  <div class="brand"><div class="brand-mark"><span>K</span></div><div><div class="brand-title">KOR <b>WORKSTATION</b></div><div class="brand-sub">COMMAND NEXUS <span>///</span> LOCAL-FIRST CORE</div></div></div>
  <div class="system-tag"><span id="systemTagLabel">LOKALES SYSTEM</span> <b>•</b> SQLITE / OFFLINE-FIRST</div>
- <div class="top-actions"><div id="connection" class="connection">● KERN VERBUNDEN</div><button id="langBtn" class="lang" aria-label="Sprache wechseln">DE / EN</button><button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙</button></div>
+ <div class="top-actions"><div id="connection" class="connection">● KERN VERBUNDEN</div><button id="langBtn" class="lang" aria-label="Sprache wechseln">DE / EN</button><button id="commandPaletteBtn" class="icon-btn command-open" aria-label="Befehlssuche öffnen" title="Befehlssuche (Ctrl+K)">⌕</button><button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙</button></div>
 </header>
+<dialog id="commandPalette" class="command-palette" aria-labelledby="commandPaletteTitle">
+ <div class="command-palette-shell">
+  <div class="command-palette-head"><div><span class="kicker">KOR-NEXUS / COMMAND DECK</span><h2 id="commandPaletteTitle">BEFEHLSZENTRALE</h2></div><button id="closeCommandPalette" class="icon-btn" type="button" aria-label="Befehlssuche schließen">×</button></div>
+  <label class="sr-only" for="commandSearch">Befehle durchsuchen</label><input id="commandSearch" class="input command-search" type="search" autocomplete="off" placeholder="Modul oder Aktion suchen …" aria-controls="commandResults">
+  <div id="commandResults" class="command-results" role="list" aria-label="Verfügbare Befehle"></div>
+  <div class="command-palette-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> Auswahl</span><span><kbd>Enter</kbd> Öffnen</span><span><kbd>Esc</kbd> Schließen</span></div>
+ </div>
+</dialog>
 <div class="layout">
 <aside>
  <div class="label" data-i18n="navLabel">KOMMANDO / MODULE</div>
