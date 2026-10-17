@@ -32,6 +32,7 @@ window.fetch=async (input,init={})=>{
  if(path==='/geodata/germany-states'&&method==='GET')return res(__state.stateGeo?{available:true,geojson:__state.stateGeo,feature_count:__state.stateGeo.features.length}:{available:false,geojson:null,feature_count:0});
  if(path==='/geodata/germany-states'&&method==='POST'){__state.stateGeo=body.geojson;return res({ok:true,available:true,feature_count:body.geojson.features.length,recognized_state_names:body.geojson.features.length},201)}
  if(path==='/health')return res({ok:true,app:'KOR-NEXUS',version:'1.20.0',database:'SQLite',data_dir:'/mock/kor-workstation',backup_count:__state.backups.length,python:'3.13'});
+ if(path==='/events'&&method==='GET'){const cursor=Number(u.searchParams.get('since')||0);const latest=__state.latestEventId||0;return res({events:[],cursor:latest,latest_event_id:latest,reset_required:cursor>latest});}
  if(path==='/engine/status')return res({ok:true,counts:{open_alerts:__state.alerts.filter(a=>['open','acknowledged'].includes(a.status)).length,enabled_automation_rules:__state.engineRules.filter(r=>r.enabled).length,pending_action_proposals:__state.proposals.filter(p=>p.status==='pending').length,pending_scheduled_jobs:__state.jobs.filter(j=>j.status==='pending').length}});
  if(path==='/engine/alerts')return res({items:__state.alerts.slice(),count:__state.alerts.length,status:u.searchParams.get('status')||'all'});
  if(path==='/automation/rules'&&method==='GET')return res({items:__state.engineRules.map(r=>({...r})),count:__state.engineRules.length});
