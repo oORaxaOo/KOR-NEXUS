@@ -518,6 +518,7 @@ def build_export(con):
         'schema_version':2,'app':APP_NAME,'exported_at':utcnow(),
         'id_policy':'IDs are identifiers inside this export only; import remaps them to new local SQLite IDs.',
         'tasks':rows('SELECT * FROM tasks ORDER BY id'),
+        'task_dependencies':rows('SELECT * FROM task_dependencies ORDER BY id'),
         'records':records,
         'map_locations':rows('SELECT l.*,p.title AS project_title,t.title AS task_title,u.name AS unit_name,rs.name AS resource_name FROM map_locations l LEFT JOIN records p ON p.id=l.project_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN resources rs ON rs.id=l.resource_id ORDER BY l.id'),
         'units':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id')],
@@ -557,7 +558,7 @@ def validate_portable_import(payload):
         raise ValueError('Ungültiges oder nicht unterstütztes Importformat (unterstützt werden Schema 1 und 2).')
     version=payload['schema_version']
     names=('tasks','records','map_locations') + (('units','resources','project_assignments') if version>=2 else ())
-    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000,'resource_policies':50000}
+    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000,'resource_policies':50000,'task_dependencies':100000}
     data={}
     for name in names:
         arr=payload.get(name,[])
@@ -570,9 +571,13 @@ def validate_portable_import(payload):
         policies=payload.get('resource_policies',[])
         if not isinstance(policies,list) or len(policies)>limits['resource_policies']: raise ValueError('resource_policies: ungültige Liste oder zu viele Einträge.')
         data['resource_policies']=policies
+        dependencies=payload.get('task_dependencies',[])
+        if not isinstance(dependencies,list) or len(dependencies)>limits['task_dependencies']: raise ValueError('task_dependencies: ungültige Liste oder zu viele Einträge.')
+        data['task_dependencies']=dependencies
     else:
         data['resource_movements']=[]
         data['resource_policies']=[]
+        data['task_dependencies']=[]
     if version>=2:
         for name in ('units','resources','project_assignments'):
             if name not in payload: raise ValueError(f'Schema 2 benötigt das Feld {name}.')
@@ -631,6 +636,27 @@ def validate_portable_import(payload):
         try: minimum=float(policy['minimum_quantity']); target=None if policy.get('target_quantity') in (None,'') else float(policy['target_quantity'])
         except (TypeError,ValueError): raise ValueError('Bestandsrichtlinie enthält eine ungültige Menge.')
         if not math.isfinite(minimum) or minimum<0 or minimum>1e12 or target is not None and (not math.isfinite(target) or target<minimum or target>1e12): raise ValueError('Bestandsrichtlinie enthält eine ungültige Menge.')
+    dependency_pairs=set()
+    dependency_graph={}
+    for dependency in data.get('task_dependencies',[]):
+        required=('id','task_id','depends_on_task_id','dependency_type','created_at')
+        if not isinstance(dependency,dict) or any(field not in dependency or dependency[field] is None for field in required): raise ValueError('Aufgabenabhängigkeit ist unvollständig.')
+        task_ref=str(dependency['task_id']); depends_ref=str(dependency['depends_on_task_id'])
+        if task_ref not in ids.get('tasks',set()) or depends_ref not in ids.get('tasks',set()): raise ValueError('Aufgabenabhängigkeit verweist auf eine unbekannte Aufgabe.')
+        if task_ref==depends_ref: raise ValueError('Eine Aufgabe kann nicht von sich selbst abhängen.')
+        if dependency.get('dependency_type')!='finish_to_start': raise ValueError('Unbekannter Abhängigkeitstyp.')
+        pair=(task_ref,depends_ref)
+        if pair in dependency_pairs: raise ValueError('Doppelte Aufgabenabhängigkeit.')
+        dependency_pairs.add(pair)
+        dependency_graph.setdefault(task_ref,[]).append(depends_ref)
+    visiting=set();visited=set()
+    def visit_dependency(node):
+        if node in visiting: raise ValueError('Aufgabenabhängigkeiten enthalten einen Zyklus.')
+        if node in visited: return
+        visiting.add(node)
+        for parent in dependency_graph.get(node,[]): visit_dependency(parent)
+        visiting.remove(node);visited.add(node)
+    for node in dependency_graph: visit_dependency(node)
     projects=_legacy_lookup([r for r in data['records'] if r.get('module')=='projects'],'title','Projekte')
     tasks=_legacy_lookup(data['tasks'],'title','Aufgaben')
     units=_legacy_lookup(data.get('units',[]),'name','Personenprofile')
@@ -706,7 +732,7 @@ def portable_import_preview(payload):
     summary={'schema_version':payload.get('schema_version') if isinstance(payload,dict) else None,
              'tasks':len(arr('tasks')),'records':len(records),'records_by_module':by_module,
              'map_locations':len(arr('map_locations')),'units':len(arr('units')),
-             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'resource_policies':len(arr('resource_policies')),'project_assignments':len(arr('project_assignments')),
+             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'resource_policies':len(arr('resource_policies')),'task_dependencies':len(arr('task_dependencies')),'project_assignments':len(arr('project_assignments')),
              'settings':len(payload.get('settings',{})) if isinstance(payload,dict) and isinstance(payload.get('settings',{}),dict) else 0,
              'geodata':len(geo),'geodata_features':sum(len(v.get('features',[])) for v in geo.values() if isinstance(v,dict) and isinstance(v.get('features'),list)),
              'news_items':len(news.get('items',[])) if isinstance(news.get('items',[]),list) else 0,
@@ -774,6 +800,11 @@ def apply_portable_import(con, payload, now):
         cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at,due_at,priority,estimated_minutes,actual_minutes,recurrence_json,blocked_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(str(t['title']).strip(),str(t.get('area','SYSTEM'))[:80],int(bool(t.get('done'))),str(t.get('created_at',now))[:80],str(t.get('updated_at',now))[:80],due,priority,estimated,actual,recurrence_json,blocked))
 
         if t.get('id') is not None: task_map[str(t['id'])]=cur.lastrowid
+    for dependency in data.get('task_dependencies',[]):
+        mapped_task=task_map.get(str(dependency['task_id']))
+        mapped_parent=task_map.get(str(dependency['depends_on_task_id']))
+        if mapped_task is None or mapped_parent is None: raise ValueError('Aufgabenabhängigkeit verweist auf eine unbekannte Aufgabe.')
+        con.execute('INSERT INTO task_dependencies(task_id,depends_on_task_id,dependency_type,created_at) VALUES(?,?,?,?)',(mapped_task,mapped_parent,'finish_to_start',str(dependency.get('created_at',now))[:80]))
     for r in data['records']:
         cur=con.execute('INSERT INTO records(module,title,body,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(r['module'],str(r['title']).strip(),str(r.get('body',''))[:100000],str(r.get('region',''))[:180],json.dumps(r.get('tags',[]) if isinstance(r.get('tags',[]),list) else [],ensure_ascii=False),str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
         if r.get('id') is not None: record_map[str(r['id'])]=cur.lastrowid

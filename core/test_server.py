@@ -63,6 +63,30 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_task_dependencies_roundtrip_remaps_both_task_ids(self):
+        _,first=self.req('/api/tasks','POST',{'title':'Abhängigkeit A'})
+        _,second=self.req('/api/tasks','POST',{'title':'Abhängigkeit B'})
+        first_id,second_id=first['item']['id'],second['item']['id']
+        status,created=self.req(f'/api/tasks/{first_id}/dependencies','POST',{'depends_on_task_id':second_id})
+        self.assertEqual(status,201)
+        payload=self.req('/api/export')[1]
+        self.assertEqual(len(payload['task_dependencies']),1)
+        payload['tasks'][0]['id']=70101
+        payload['tasks'][1]['id']=70102
+        payload['task_dependencies'][0]['task_id']=70101
+        payload['task_dependencies'][0]['depends_on_task_id']=70102
+        status,result=self.req('/api/import','POST',{'data':payload})
+        self.assertEqual(status,200,result)
+        with app.db_connect() as con:
+            tasks=con.execute('SELECT id,title FROM tasks ORDER BY id').fetchall()
+            deps=con.execute('SELECT * FROM task_dependencies').fetchall()
+            self.assertEqual(con.execute('PRAGMA foreign_key_check').fetchall(),[])
+        ids_by_title={row['title']:row['id'] for row in tasks}
+        self.assertNotEqual(ids_by_title['Abhängigkeit A'],70101)
+        self.assertNotEqual(ids_by_title['Abhängigkeit B'],70102)
+        self.assertEqual(len(deps),1)
+        self.assertEqual((deps[0]['task_id'],deps[0]['depends_on_task_id']),(ids_by_title['Abhängigkeit A'],ids_by_title['Abhängigkeit B']))
+
     def test_task_schedule_fields_and_dependency_cycle_protection(self):
         status,first=self.req('/api/tasks','POST',{'title':'Erste Aufgabe','due_at':'2027-01-10','priority':5,'estimated_minutes':45,'recurrence':{'frequency':'weekly','interval':2,'days_of_week':[0,3]},'blocked_reason':'Wartet auf Material'})
         self.assertEqual(status,201)
