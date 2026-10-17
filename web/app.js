@@ -5,7 +5,7 @@ const modules={atlas:{label:'ATLAS',labelEn:'ATLAS',title:'Atlas-Notizen',titleE
 const states=['Baden-Württemberg','Bayern','Berlin','Brandenburg','Bremen','Hamburg','Hessen','Mecklenburg-Vorpommern','Niedersachsen','Nordrhein-Westfalen','Rheinland-Pfalz','Saarland','Sachsen','Sachsen-Anhalt','Schleswig-Holstein','Thüringen'];
 let active='atlas',selectedRegion='Deutschland',lang='de',tasks=[],records=[],newsItems=[],newsSources=[],settings={},health={},backupItems=[],searchText='',toastTimer,recordsLoadSequence=0,newsRefreshPromise=null;
 let mapMode='world',worldGeoJSON=null,stateGeoJSON=null,mapLocations=[],pendingImportData=null;
-let liveCursor=0,liveSource=null,livePollTimer=null,liveRefreshTimer=null,livePollBusy=false,liveJournalAvailable=false;
+let liveCursor=0,liveSource=null,livePollTimer=null,liveSseRetryTimer=null,liveRefreshTimer=null,livePollBusy=false,liveJournalAvailable=false;
 const t={
  de:{navLabel:'KOMMANDO / MODULE',atlas:'ATLAS',mapOverview:'Weltlage',projects:'PROJEKTE',projectsSub:'Planung & Aufgaben',archive:'ARCHIV',archiveSub:'Kor-Wissensbasis',simulation:'SIMULATION',simulationSub:'Szenarien & Modelle',database:'DATENBANK',databaseSub:'Lokale Datensätze',news:'NACHRICHTEN',newsSub:'RSS-Quellen',systemStatus:'SYSTEMSTATUS',coreStatus:'KERNSTATUS',localData:'Lokale Daten',backups:'Backups',configure:'KONFIGURIEREN',worldSituation:'Weltlage',tasks:'Aufgaben',newTask:'Neue Aufgabe hinzufügen…',offlineNote:'KEINE INTERNETVERBINDUNG — lokale Daten bleiben verfügbar. Live-Nachrichten sind eventuell veraltet.',atlasNotePlaceholder:'Notiz zur ausgewählten Region…',recordSearch:'Einträge durchsuchen…',newsSearch:'Nachrichten durchsuchen…'},
  en:{navLabel:'COMMAND / MODULES',atlas:'ATLAS',mapOverview:'World view',projects:'PROJECTS',projectsSub:'Planning & tasks',archive:'ARCHIVE',archiveSub:'Kor knowledge base',simulation:'SIMULATION',simulationSub:'Scenarios & models',database:'DATABASE',databaseSub:'Local records',news:'NEWS',newsSub:'RSS feeds',systemStatus:'SYSTEM STATUS',coreStatus:'CORE STATUS',localData:'Local data',backups:'Backups',configure:'CONFIGURE',worldSituation:'World overview',tasks:'Tasks',newTask:'Add a task…',offlineNote:'NO INTERNET CONNECTION — local data remains available. Live news may be out of date.',atlasNotePlaceholder:'Note for the selected region…',recordSearch:'Search entries…',newsSearch:'Search news…'}
@@ -197,41 +197,58 @@ function scheduleLiveRefresh(event){
  clearTimeout(liveRefreshTimer);
  liveRefreshTimer=setTimeout(()=>{refreshLiveViews(event).catch(error=>console.warn('Live-Aktualisierung fehlgeschlagen',error));},250);
 }
+function acceptLiveEvent(item){
+ const id=Number(item?.event_id)||0;
+ if(id&&id<=liveCursor)return;
+ if(id)liveCursor=id;
+ scheduleLiveRefresh(item);
+}
 async function pollEventJournal(){
  if(livePollBusy)return;
  livePollBusy=true;
  try{
   const batch=await api('/events?since='+encodeURIComponent(liveCursor)+'&limit=200');
   if(batch.reset_required){liveCursor=Number(batch.cursor)||0;await refreshAllLiveViews();return;}
-  for(const event of batch.events||[]){liveCursor=Math.max(liveCursor,Number(event.event_id)||0);scheduleLiveRefresh(event);}
+  for(const event of batch.events||[])acceptLiveEvent(event);
  }catch(error){console.warn('Ereignis-Polling fehlgeschlagen',error);}
  finally{livePollBusy=false;}
 }
+function stopEventPolling(){
+ if(livePollTimer){clearInterval(livePollTimer);livePollTimer=null;}
+ if(liveSseRetryTimer){clearInterval(liveSseRetryTimer);liveSseRetryTimer=null;}
+}
 function startEventPolling(){
- if(livePollTimer)return;
- pollEventJournal();
- livePollTimer=setInterval(pollEventJournal,2000);
+ if(!livePollTimer){pollEventJournal();livePollTimer=setInterval(pollEventJournal,2000);}
+ if('EventSource' in window&&!liveSseRetryTimer)liveSseRetryTimer=setInterval(tryStartEventSource,30000);
+}
+function tryStartEventSource(){
+ if(liveSource||!('EventSource' in window))return;
+ let source;
+ try{source=new EventSource('/api/events/stream?since='+encodeURIComponent(liveCursor));}
+ catch(error){console.warn('SSE nicht verfügbar; verwende Ereignis-Polling.',error);startEventPolling();return;}
+ liveSource=source;
+ source.addEventListener('change',event=>{
+  try{acceptLiveEvent(JSON.parse(event.data));}
+  catch(error){console.warn('Ungültiges Live-Ereignis ignoriert',error);}
+ });
+ source.addEventListener('reset_required',event=>{
+  try{const data=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(data.cursor)||0);}catch{}
+  clearTimeout(liveRefreshTimer);
+  liveRefreshTimer=setTimeout(()=>refreshAllLiveViews().catch(error=>console.warn('Live-Snapshot fehlgeschlagen',error)),0);
+ });
+ source.onopen=()=>{
+  if(liveSource!==source)return;
+  stopEventPolling();
+ };
+ source.onerror=()=>{
+  if(liveSource!==source)return;
+  source.close();liveSource=null;startEventPolling();
+ };
 }
 function startLiveUpdates(){
- if('EventSource' in window){
-  let source;
-  try{source=new EventSource('/api/events/stream?since='+encodeURIComponent(liveCursor));}
-  catch(error){console.warn('SSE nicht verfügbar; verwende Ereignis-Polling.',error);startEventPolling();return;}
-  liveSource=source;
-  source.addEventListener('change',event=>{
-   try{const item=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(item.event_id)||0);scheduleLiveRefresh(item);}
-   catch(error){console.warn('Ungültiges Live-Ereignis ignoriert',error);}
-  });
-  source.addEventListener('reset_required',event=>{
-   try{const data=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(data.cursor)||0);}catch{}
-   clearTimeout(liveRefreshTimer);
-   liveRefreshTimer=setTimeout(()=>refreshAllLiveViews().catch(error=>console.warn('Live-Snapshot fehlgeschlagen',error)),0);
-  });
-  source.onerror=()=>{
-   if(liveSource!==source)return;
-   source.close();liveSource=null;startEventPolling();
-  };
- }else startEventPolling();
+ if('EventSource' in window)tryStartEventSource();
+ // Poll until SSE has actually opened; it also remains the recovery path after disconnects.
+ startEventPolling();
 }
 async function reloadAll(){const jobs=[loadTasks(),loadSettings(),loadBackups()];if(active==='atlas')jobs.push(renderAtlasRecords());else if(active!=='news')jobs.push(loadRecords(active));await Promise.all(jobs);}
 async function migrateLegacy(){try{if(localStorage.getItem('kor-workstation.migrated-v1'))return;const oldTasks=JSON.parse(localStorage.getItem('kor-workstation.tasks')||'null');const oldRecords=JSON.parse(localStorage.getItem('kor-workstation.records')||'null');if(!oldTasks&&!oldRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const currentTasks=(await api('/tasks')).items;let currentRecords=0;for(const m of ['atlas','projects','archive','simulation','database'])currentRecords+=(await api('/records?module='+m)).items.length;if(currentTasks.length||currentRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const data={schema_version:1,tasks:Array.isArray(oldTasks)?oldTasks:[],records:[]};if(oldRecords&&typeof oldRecords==='object')for(const [module,items] of Object.entries(oldRecords))if(['atlas','projects','archive','simulation','database'].includes(module)&&Array.isArray(items))for(const r of items)data.records.push({...r,module});await api('/import',{method:'POST',body:JSON.stringify({data})});localStorage.setItem('kor-workstation.migrated-v1','1');notify(lang==='de'?'Vorhandene Browserdaten in SQLite übernommen.':'Legacy browser data moved to SQLite.');}catch(e){console.warn('Legacy migration skipped:',e);}}

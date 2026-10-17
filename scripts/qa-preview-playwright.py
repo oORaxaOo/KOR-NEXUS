@@ -104,6 +104,7 @@ with sync_playwright() as p:
   page.set_content(html,wait_until='domcontentloaded',timeout=10000)
   try:
    page.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
+  page.wait_for_function("window.__qaRequests.some(r=>r.path==='/events' && r.search.includes('limit=200'))",timeout=4000)
   except PlaywrightTimeoutError:
    print('DIAGNOSTIC: toast='+repr(page.locator('#toast').inner_text() if page.locator('#toast').count() else '<missing>'))
    print('DIAGNOSTIC: connection='+repr(page.locator('#connection').inner_text() if page.locator('#connection').count() else '<missing>'))
