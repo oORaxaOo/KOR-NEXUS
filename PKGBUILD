@@ -28,10 +28,11 @@ package() {
   install -d "$pkgdir/opt/kor-workstation" "$pkgdir/usr/bin" \
     "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/scalable/apps" \
     "$pkgdir/usr/share/licenses/kor-workstation" "$pkgdir/usr/share/doc/kor-workstation"
-  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/web/geodata"
+  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/scripts"
   install -m644 core/server.py core/engine.py core/ai_provider.py core/__init__.py "$pkgdir/opt/kor-workstation/core/"
   install -m644 web/index.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
   install -m644 web/geodata/world.geojson "$pkgdir/opt/kor-workstation/web/geodata/world.geojson"
+  install -m644 scripts/setup-local-ai.sh "$pkgdir/opt/kor-workstation/scripts/setup-local-ai.sh"
   install -m755 packaging/kor-workstation-launcher.sh "$pkgdir/usr/bin/kor-workstation"
   install -m755 packaging/kor-workstation-stop.sh "$pkgdir/usr/bin/kor-workstation-stop"
   install -m644 packaging/kor-workstation.desktop "$pkgdir/usr/share/applications/kor-workstation.desktop"
