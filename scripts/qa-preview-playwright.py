@@ -204,7 +204,7 @@ with sync_playwright() as p:
   page.locator('#newsSearch').fill('QA-Nachrichtenmeldung');assert page.locator('#newsList .news-card').count()==1
   print('PASS: Nachrichtenliste, Quellenstatus und Suche')
   page.locator('#nav button[data-module="operations"]').click();page.wait_for_function("document.querySelector('#operationsView').hidden===false",timeout=3000);page.locator('#engineView').wait_for(state='visible');page.locator('#engineEvaluate').click();page.locator('#toast').get_by_text('Engine-Auswertung abgeschlossen.').wait_for();
-  page.locator('#aiProviderBadge').get_by_text('DEAKTIVIERT').wait_for();assert page.locator('#aiGenerateButton').is_disabled(), 'KI muss ohne lokalen Provider deaktiviert bleiben'
+  page.wait_for_function("document.querySelector('#aiProviderBadge').textContent==='DEAKTIVIERT'",timeout=3000);assert page.locator('#aiGenerateButton').is_disabled(), 'KI muss ohne lokalen Provider deaktiviert bleiben'
   page.evaluate("__state.aiEnabled=true");page.locator('#aiRefreshStatus').click();page.wait_for_function("document.querySelector('#aiGenerateButton').disabled===false",timeout=3000)
   page.locator('#aiPrompt').fill('Prüfe den Kor-Status');page.locator('#aiAdvisorForm button[type=submit]').click();page.wait_for_function("document.querySelector('#aiResponse').textContent.includes('QA-KI-Antwort')",timeout=3000)
   assert page.locator('#aiResponse').inner_text()=='QA-KI-Antwort: Prüfe den Kor-Status'
