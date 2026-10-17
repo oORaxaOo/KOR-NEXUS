@@ -112,6 +112,25 @@ class CoreApiTests(unittest.TestCase):
             provider.close()
             self.assertFalse(provider.status()['model_loaded'])
 
+    def test_local_ai_provider_reads_explicit_user_config_without_enabling_by_default(self):
+        import os
+        from core.ai_provider import DisabledAIProvider, LlamaCppProvider, configured_ai_provider
+        with tempfile.TemporaryDirectory() as directory:
+            config_dir=Path(directory)/'kor-nexus';config_dir.mkdir()
+            model_path=Path(directory)/'user-model.gguf';model_path.write_bytes(b'fake model')
+            config=(config_dir/'ai.json')
+            config.write_text(json.dumps({'enabled':True,'model_path':str(model_path),'context_size':2048,'max_tokens':128}),encoding='utf-8')
+            with patch.dict(os.environ,{'XDG_CONFIG_HOME':directory,'KOR_NEXUS_AI_CONFIG':'','KOR_NEXUS_AI_ENABLED':'','KOR_NEXUS_AI_MODEL_PATH':''}):
+                provider=configured_ai_provider()
+                self.assertIsInstance(provider,LlamaCppProvider)
+                self.assertTrue(provider.enabled)
+                self.assertEqual(provider.model_path,model_path)
+                self.assertEqual(provider.context_size,2048)
+                self.assertEqual(provider.max_tokens,128)
+            config.write_text(json.dumps({'enabled':False,'model_path':str(model_path)}),encoding='utf-8')
+            with patch.dict(os.environ,{'XDG_CONFIG_HOME':directory,'KOR_NEXUS_AI_CONFIG':'','KOR_NEXUS_AI_ENABLED':'','KOR_NEXUS_AI_MODEL_PATH':''}):
+                self.assertIsInstance(configured_ai_provider(),DisabledAIProvider)
+
     def test_scheduled_jobs_run_due_once_and_leave_future_jobs_pending(self):
         now=app.utcnow()
         status,created=self.req('/api/engine/jobs','POST',{'job_key':'qa-evaluate-now','job_type':'engine_evaluate','due_at':now})
