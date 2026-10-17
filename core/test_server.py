@@ -363,6 +363,7 @@ class CoreApiTests(unittest.TestCase):
         _, task=self.req('/api/tasks','POST',{'title':'Portabilitätsaufgabe','area':'Atlas'})
         _, unit=self.req('/api/units','POST',{'name':'Mira','role':'Logistik','status':'aktiv','biography':'Profilbiografie','region':'Hessen','tags':['Erste Hilfe']})
         _, resource=self.req('/api/resources','POST',{'name':'Feldfunkgerät','category':'Kommunikation','quantity':4,'unit':'Stück','location':'Depot Nord','notes':'Funktionsfähig'})
+        self.req(f"/api/resources/{resource['item']['id']}/policy",'PATCH',{'minimum_quantity':2,'target_quantity':9})
         _, assignment=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'unit_id':unit['item']['id'],'quantity':2,'notes':'Einsatzteam'})
         _, resource_assignment=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'resource_id':resource['item']['id'],'quantity':1,'notes':'Materialpaket'})
         with app.db_connect() as con:
@@ -374,11 +375,12 @@ class CoreApiTests(unittest.TestCase):
         self.req('/api/geodata/germany-states','POST',{'geojson':geo})
         exported=self.req('/api/export')[1]
         self.assertEqual(exported['schema_version'],2)
-        for key in ('tasks','records','map_locations','units','resources','project_assignments','settings','geodata','news'):
+        for key in ('tasks','records','map_locations','units','resources','resource_movements','resource_policies','project_assignments','settings','geodata','news'):
             self.assertIn(key,exported)
         self.assertEqual(exported['units'][0]['biography'],'Profilbiografie')
         self.assertEqual(len(exported['project_assignments']),2)
         self.assertGreaterEqual(len(exported['resource_movements']),1)
+        self.assertEqual(exported['resource_policies'][0]['minimum_quantity'],2)
         self.assertEqual(len(exported['news']['items']),1)
         # Simulate IDs from an unrelated SQLite database; all foreign keys are rewritten through the export map.
         exported['records'][0]['id']=88001
@@ -387,6 +389,7 @@ class CoreApiTests(unittest.TestCase):
         exported['resources'][0]['id']=55001
         for movement in exported.get('resource_movements',[]):
             if movement.get('resource_id') is not None: movement['resource_id']=55001
+        for policy in exported.get('resource_policies',[]): policy['resource_id']=55001
         for item in exported['project_assignments']:
             item['project_id']=88001
             if item.get('unit_id') is not None: item['unit_id']=66001
@@ -420,7 +423,27 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(fresh['news']['items'][0]['title'],'Testmeldung')
         self.assertGreaterEqual(len(fresh['resource_movements']),1)
         self.assertEqual(fresh['resource_movements'][0]['resource_id'],new_resource)
+        self.assertEqual(fresh['resource_policies'][0]['resource_id'],new_resource)
+        self.assertEqual(fresh['resource_policies'][0]['minimum_quantity'],2)
+        self.assertEqual(fresh['resource_policies'][0]['target_quantity'],9)
         self.assertEqual(fresh['map_locations'][0]['task_id'],new_task)
+
+    def test_schema2_without_optional_ledger_fields_remains_importable(self):
+        _,resource=self.req('/api/resources','POST',{'name':'Altes Exportformat','quantity':6,'unit':'Kisten'})
+        payload=self.req('/api/export')[1]
+        payload.pop('resource_movements',None)
+        payload.pop('resource_policies',None)
+        status,result=self.req('/api/import','POST',{'data':payload})
+        self.assertEqual(status,200,result)
+        imported=self.req('/api/resources')[1]['items'][0]
+        status,movements=self.req(f"/api/resources/{imported['id']}/movements")
+        self.assertEqual(status,200)
+        self.assertEqual(len(movements['items']),1)
+        self.assertEqual(movements['items'][0]['movement_type'],'import_snapshot')
+        status,policy=self.req(f"/api/resources/{imported['id']}/policy")
+        self.assertEqual(status,200)
+        self.assertEqual(policy['policy']['minimum_quantity'],0)
+        self.assertIsNone(policy['policy']['target_quantity'])
 
     def test_portable_import_rejects_unsafe_news_links(self):
         self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})

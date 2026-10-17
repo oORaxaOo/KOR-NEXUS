@@ -450,6 +450,7 @@ def build_export(con):
         'units':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id')],
         'resources':rows('SELECT * FROM resources ORDER BY id'),
         'resource_movements':rows('SELECT id,resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,reverses_movement_id,created_at FROM resource_movements ORDER BY id'),
+        'resource_policies':rows('SELECT id,resource_id,minimum_quantity,target_quantity,updated_at FROM resource_policies ORDER BY id'),
         'project_assignments':rows('SELECT * FROM project_assignments ORDER BY id'),
         'settings':get_settings(con),
         'geodata':{('germany_states' if r['key']=='germany-states' else r['key']):json.loads(r['geojson']) for r in con.execute('SELECT key,geojson FROM geodata_assets')},
@@ -483,7 +484,7 @@ def validate_portable_import(payload):
         raise ValueError('Ungültiges oder nicht unterstütztes Importformat (unterstützt werden Schema 1 und 2).')
     version=payload['schema_version']
     names=('tasks','records','map_locations') + (('units','resources','project_assignments') if version>=2 else ())
-    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000}
+    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000,'resource_policies':50000}
     data={}
     for name in names:
         arr=payload.get(name,[])
@@ -493,8 +494,12 @@ def validate_portable_import(payload):
         movements=payload.get('resource_movements',[])
         if not isinstance(movements,list) or len(movements)>limits['resource_movements']: raise ValueError('resource_movements: ungültige Liste oder zu viele Einträge.')
         data['resource_movements']=movements
+        policies=payload.get('resource_policies',[])
+        if not isinstance(policies,list) or len(policies)>limits['resource_policies']: raise ValueError('resource_policies: ungültige Liste oder zu viele Einträge.')
+        data['resource_policies']=policies
     else:
         data['resource_movements']=[]
+        data['resource_policies']=[]
     if version>=2:
         for name in ('units','resources','project_assignments'):
             if name not in payload: raise ValueError(f'Schema 2 benötigt das Feld {name}.')
@@ -542,6 +547,12 @@ def validate_portable_import(payload):
         reverse_ref=movement.get('reverses_movement_id')
         if reverse_ref not in (None,'') and str(reverse_ref) not in seen_movement_ids: raise ValueError('Rücknahme muss auf eine vorherige Ressourcenbewegung verweisen.')
         seen_movement_ids.add(str(movement['id']))
+    for policy in data.get('resource_policies',[]):
+        if not isinstance(policy,dict) or any(field not in policy or policy[field] is None for field in ('id','resource_id','minimum_quantity','updated_at')): raise ValueError('Bestandsrichtlinie ist unvollständig.')
+        if str(policy['resource_id']) not in ids.get('resources',set()): raise ValueError('Bestandsrichtlinie verweist auf eine unbekannte Ressource.')
+        try: minimum=float(policy['minimum_quantity']); target=None if policy.get('target_quantity') in (None,'') else float(policy['target_quantity'])
+        except (TypeError,ValueError): raise ValueError('Bestandsrichtlinie enthält eine ungültige Menge.')
+        if not math.isfinite(minimum) or minimum<0 or minimum>1e12 or target is not None and (not math.isfinite(target) or target<minimum or target>1e12): raise ValueError('Bestandsrichtlinie enthält eine ungültige Menge.')
     projects=_legacy_lookup([r for r in data['records'] if r.get('module')=='projects'],'title','Projekte')
     tasks=_legacy_lookup(data['tasks'],'title','Aufgaben')
     units=_legacy_lookup(data.get('units',[]),'name','Personenprofile')
@@ -617,7 +628,7 @@ def portable_import_preview(payload):
     summary={'schema_version':payload.get('schema_version') if isinstance(payload,dict) else None,
              'tasks':len(arr('tasks')),'records':len(records),'records_by_module':by_module,
              'map_locations':len(arr('map_locations')),'units':len(arr('units')),
-             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'project_assignments':len(arr('project_assignments')),
+             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'resource_policies':len(arr('resource_policies')),'project_assignments':len(arr('project_assignments')),
              'settings':len(payload.get('settings',{})) if isinstance(payload,dict) and isinstance(payload.get('settings',{}),dict) else 0,
              'geodata':len(geo),'geodata_features':sum(len(v.get('features',[])) for v in geo.values() if isinstance(v,dict) and isinstance(v.get('features'),list)),
              'news_items':len(news.get('items',[])) if isinstance(news.get('items',[]),list) else 0,
@@ -703,6 +714,11 @@ def apply_portable_import(con, payload, now):
             cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,reverses_movement_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
                 (mapped_resource,str(movement['resource_name'])[:180],str(movement['movement_type']),float(movement['quantity_delta']),float(movement['quantity_after']),str(movement['unit'])[:40],str(movement.get('notes',''))[:2000],'portable-import:'+uuid.uuid4().hex,mapped_reverse,str(movement['created_at'])[:80]))
             movement_map[str(movement['id'])]=cur.lastrowid
+        for policy in data.get('resource_policies',[]):
+            mapped_resource=resource_map.get(str(policy['resource_id']))
+            if mapped_resource is None: raise ValueError('Bestandsrichtlinie verweist auf eine unbekannte Ressource.')
+            target=policy.get('target_quantity')
+            con.execute('UPDATE resource_policies SET minimum_quantity=?,target_quantity=?,updated_at=? WHERE resource_id=?',(float(policy['minimum_quantity']),None if target in (None,'') else float(target),str(policy['updated_at'])[:80],mapped_resource))
     def resolve_ref(item,field,mapping,legacy_name,lookup):
         if item.get(field) not in (None,''):
             key=str(item[field])
