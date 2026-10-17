@@ -244,14 +244,18 @@ function wireCommandPalette(){
  $('#commandPaletteBtn').addEventListener('click',open);
  $('#closeCommandPalette').addEventListener('click',()=>dialog.close());
  search.addEventListener('input',render);
- search.addEventListener('keydown',e=>{
+ dialog.addEventListener('keydown',e=>{
   const buttons=[...results.querySelectorAll('[data-command-index]')];
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
-   e.preventDefault();if(!buttons.length)return;
+   if(!buttons.length)return;
    const active=buttons.indexOf(document.activeElement);
-   buttons[(active+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();
-  }else if(e.key==='Enter'&&buttons.length){e.preventDefault();const active=buttons.indexOf(document.activeElement);runCommand(visible[active>=0?active:0]);}
-  else if(e.key==='Escape'&&dialog.open){e.preventDefault();dialog.close();}
+   if(document.activeElement!==search&&active<0)return;
+   e.preventDefault();
+   const current=active<0?(e.key==='ArrowDown'?-1:0):active;
+   buttons[(current+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();
+  }else if(e.key==='Enter'&&document.activeElement===search&&buttons.length){
+   e.preventDefault();runCommand(visible[0]);
+  }else if(e.key==='Escape'&&dialog.open){e.preventDefault();dialog.close();}
  });
  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();open();}});
  dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
