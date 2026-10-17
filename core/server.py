@@ -63,6 +63,58 @@ def db_connect():
     return con
 
 
+
+def ensure_event_journal_schema(con):
+    """Install the additive change journal and triggers without rewriting user data."""
+    con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_uuid TEXT NOT NULL UNIQUE,
+        occurred_at TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK(event_type IN ('created','updated','deleted')),
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        schema_version INTEGER NOT NULL DEFAULT 1
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
+    entities = [
+        ('tasks','task'),('records','record'),('units','unit'),
+        ('resources','resource'),('project_assignments','assignment'),
+        ('map_locations','location')
+    ]
+    for table, entity in entities:
+        for operation, event_type in [('INSERT','created'),('UPDATE','updated'),('DELETE','deleted')]:
+            alias = 'OLD' if operation == 'DELETE' else 'NEW'
+            trigger = f'event_{table}_{operation.lower()}'
+            con.execute(f"""CREATE TRIGGER IF NOT EXISTS {trigger}
+                AFTER {operation} ON {table}
+                BEGIN
+                  INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
+                  VALUES(lower(hex(randomblob(16))),strftime('%Y-%m-%dT%H:%M:%fZ','now'),'{entity}',
+                         CAST({alias}.id AS TEXT),'{event_type}','{{"id":' || {alias}.id || '}}',1);
+                END""")
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)',(utcnow(),))
+
+
+def read_event_batch(con, since, limit=100):
+    """Read a bounded journal page and explicitly report when replay has a gap."""
+    oldest_row=con.execute('SELECT MIN(event_id) AS value FROM event_journal').fetchone()
+    latest_row=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()
+    oldest=oldest_row['value'] or 0
+    latest=latest_row['value'] or 0
+    if oldest and since < oldest - 1:
+        return {'events':[],'cursor':latest,'latest_event_id':latest,'reset_required':True}
+    rows=con.execute('SELECT event_id,event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version FROM event_journal WHERE event_id>? ORDER BY event_id LIMIT ?',(since,limit)).fetchall()
+    events=[]
+    for row in rows:
+        item=dict(row)
+        try:item['payload']=json.loads(item.pop('payload_json'))
+        except (ValueError,TypeError):item['payload']={}
+        events.append(item)
+    cursor=events[-1]['event_id'] if events else since
+    return {'events':events,'cursor':cursor,'latest_event_id':latest,'reset_required':False}
+
+
 def initialize():
     global _last_backup_monotonic
     DATA_HOME.mkdir(parents=True, exist_ok=True, mode=0o700); BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -103,6 +155,7 @@ def initialize():
         con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)',(utcnow(),))
         for k,v in [('language','de'),('backup_keep',str(BACKUP_KEEP)),('backup_interval_minutes','30'),('last_news_refresh',''),('unit_label_singular','Mitglied'),('unit_label_plural','Mitglieder')]:
             con.execute('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)',(k,v,utcnow()))
+        ensure_event_journal_schema(con)
         con.commit()
     try: os.chmod(DB_PATH, 0o600)
     except OSError: pass
@@ -663,12 +716,47 @@ class AppHandler(BaseHTTPRequestHandler):
         except Exception: raise ValueError('Ungültiges JSON')
         if not isinstance(value,dict): raise ValueError('JSON muss ein Objekt sein')
         return value
+    def stream_events(self, query):
+        raw_since=self.headers.get('Last-Event-ID') or query.get('since',['0'])[0]
+        try: cursor=max(0,int(raw_since))
+        except (TypeError,ValueError): return self.fail(400,'Ungültiger Ereignis-Cursor.')
+        self.send_response(200)
+        self.send_header('Content-Type','text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control','no-cache, no-transform')
+        self.send_header('Connection','keep-alive')
+        self.send_header('X-Accel-Buffering','no')
+        self.end_headers()
+        heartbeat=time.monotonic()
+        try:
+            while True:
+                with db_connect() as con: batch=read_event_batch(con,cursor,100)
+                if batch['reset_required']:
+                    payload=json.dumps({'cursor':batch['cursor'],'reason':'journal_gap'},separators=(',',':'))
+                    self.wfile.write(('event: reset_required\\ndata: '+payload+'\\n\\n').encode('utf-8'))
+                    self.wfile.flush()
+                    cursor=batch['cursor']
+                for item in batch['events']:
+                    payload=json.dumps(item,ensure_ascii=False,separators=(',',':'))
+                    self.wfile.write((f"id: {item['event_id']}\\nevent: change\\ndata: {payload}\\n\\n").encode('utf-8'))
+                    cursor=item['event_id']
+                if batch['events'] or batch['reset_required']: self.wfile.flush()
+                if time.monotonic()-heartbeat>=15:
+                    self.wfile.write(b': heartbeat\\n\\n');self.wfile.flush();heartbeat=time.monotonic()
+                if not batch['events']: time.sleep(1)
+        except (BrokenPipeError,ConnectionResetError,OSError):
+            return
+
     def do_GET(self):
         if not self.trusted(): return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if path=='/api/events/stream': return self.stream_events(q)
         if path.startswith('/api/'):
             maybe_backup()
+            if path=='/api/events':
+                try: since=max(0,int(q.get('since',['0'])[0])); limit=max(1,min(500,int(q.get('limit',['100'])[0])))
+                except (TypeError,ValueError): return self.fail(400,'Ungültiger Ereignis-Cursor oder Seitenumfang.')
+                with db_connect() as con: return self.send_json(read_event_batch(con,since,limit))
             if path=='/api/health': return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'database':'SQLite','data_dir':str(DATA_HOME),'backup_count':len(list(BACKUP_DIR.glob('kor-*.sqlite3'))),'python':sys.version.split()[0]})
             if path=='/api/tasks':
                 with db_connect() as con:return self.send_json({'items':[task_dict(r) for r in con.execute('SELECT * FROM tasks ORDER BY done ASC,id DESC')]})
@@ -844,6 +932,9 @@ class AppHandler(BaseHTTPRequestHandler):
                             finally:src.close();dst.close()
                     finally:
                         prune_backups()
+                    # Older backups predate the event journal; restore the additive schema in-place.
+                    with _db_lock, db_connect() as con:
+                        ensure_event_journal_schema(con)
                     return self.send_json({'ok':True,'restored':name,'safety_backup':safety})
                 if path=='/api/import':
                     exported=data.get('data')
