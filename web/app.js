@@ -87,7 +87,6 @@ function wireWorkbench(){
  $('#workbenchSearch').addEventListener('input',async()=>{try{const d=await api('/records?module=archive');renderWorkbenchNotes(d.items.filter(r=>(r.tags||[]).some(t=>String(t).toLocaleLowerCase()==='werkbank')))}catch(e){notify(e.message,'error')}});
  $('#workbenchRefresh').addEventListener('click',()=>loadWorkbench().catch(e=>notify(e.message,'error')));
  $('#workbenchView').querySelectorAll('[data-workbench-open]').forEach(b=>b.addEventListener('click',()=>activate(b.dataset.workbenchOpen).catch(e=>notify(e.message,'error'))));
- $('#steamAppLaunchForm').addEventListener('submit',e=>{e.preventDefault();const appId=$('#steamAppId').value.trim();if(!/^[0-9]{1,10}$/.test(appId)||Number(appId)<1){$('#steamLaunchStatus').textContent='Bitte eine gültige positive Steam-App-ID eingeben.';return;}const target='steam://run/'+String(Number(appId));$('#steamLaunchStatus').textContent='Steam wird geöffnet. Falls nichts passiert, prüfe die Steam-Installation und die Protokollzuordnung.';window.location.href=target;});
 }
 
 async function loadTasks(){const d=await api('/tasks');tasks=d.items;renderTasks();}
