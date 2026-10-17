@@ -69,6 +69,11 @@ class CoreApiTests(unittest.TestCase):
         self.assertTrue(batch['reset_required'])
         self.assertEqual(batch['cursor'],batch['latest_event_id'])
         self.assertEqual(batch['events'],[])
+        # A cursor newer than the restored database's latest event also requires a snapshot reset.
+        status,ahead=self.req('/api/events?since='+str(batch['latest_event_id']+5))
+        self.assertEqual(status,200)
+        self.assertTrue(ahead['reset_required'])
+        self.assertEqual(ahead['cursor'],ahead['latest_event_id'])
 
     def test_restore_from_pre_journal_backup_reinstalls_additive_schema(self):
         with app.db_connect() as con:

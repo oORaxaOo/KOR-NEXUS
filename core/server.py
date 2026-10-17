@@ -102,7 +102,7 @@ def read_event_batch(con, since, limit=100):
     latest_row=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()
     oldest=oldest_row['value'] or 0
     latest=latest_row['value'] or 0
-    if oldest and since < oldest - 1:
+    if (oldest and since < oldest - 1) or since > latest:
         return {'events':[],'cursor':latest,'latest_event_id':latest,'reset_required':True}
     rows=con.execute('SELECT event_id,event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version FROM event_journal WHERE event_id>? ORDER BY event_id LIMIT ?',(since,limit)).fetchall()
     events=[]

@@ -3,7 +3,7 @@
 Stand: 2026-10-17  
 Zielbranch: `transfer/kor-nexus-1.20.0`  
 Ausgangsbasis: `main` enthält den integrierten Stand 1.20.0; alle weiteren Änderungen erfolgen ausschließlich im Arbeitsbranch.  
-Status: Architektur- und Umsetzungsplan, noch keine Schemaänderung oder Datenmigration ausgeführt.
+Status: Phase 0 abgeschlossen; Phase 1 (additives Ereignisjournal, REST-Replay, SSE, Polling-Rückfall und Wiederherstellungskompatibilität) implementiert. Die vollständige Release-Pipeline einschließlich Arch-Paket- und Installationstest ist für den aktuellen Implementierungsstand erfolgreich. Core Engine, Ressourcen-Ledger, Automationsregeln und KI-Provider sind noch offen.
 
 ## 1. Verbindliche Architekturentscheidungen
 
