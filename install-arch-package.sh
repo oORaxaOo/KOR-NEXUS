@@ -16,6 +16,8 @@ for path in PKGBUILD scripts/create-source-archive.py; do
 done
 command -v python3 >/dev/null 2>&1 || { printf 'Python 3 fehlt.\n' >&2; exit 127; }
 printf 'KOR-NEXUS: Erzeuge das Quellarchiv und baue das Arch-Paket …\n'
+# Remove stale package artifacts so the result check cannot confuse an older build with this one.
+find "$ROOT" -maxdepth 1 -type f -name 'kor-workstation-*.pkg.tar.*' -delete
 python3 scripts/create-source-archive.py
 makepkg --syncdeps --cleanbuild --force --noconfirm
 shopt -s nullglob
