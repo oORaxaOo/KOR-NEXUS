@@ -209,8 +209,8 @@ with sync_playwright() as p:
   page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='en'",timeout=3000);page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='de'",timeout=3000)
   page.locator('#settingsBtn').click();assert 'open' in page.locator('#settingsModal').get_attribute('class')
   assert page.locator('#eventRetention').input_value()=='100000'
-  page.locator('#eventRetention').select_option('10000');page.wait_for_function("window.__state.settings.event_retention_count==='10000'",timeout=3000)
-  page.locator('#eventRetention').select_option('100000');page.wait_for_function("window.__state.settings.event_retention_count==='100000'",timeout=3000)
+  page.locator('#eventRetention').select_option('10000');page.wait_for_function("__state.settings.event_retention_count==='10000'",timeout=3000)
+  page.locator('#eventRetention').select_option('100000');page.wait_for_function("__state.settings.event_retention_count==='100000'",timeout=3000)
   import json as _json
   tasks_before_preview=page.evaluate('__state.tasks.map(t=>t.title)')
   valid_payload={'schema_version':2,'tasks':[{'id':1,'title':'Vorschauaufgabe'}],'records':[],'map_locations':[],'units':[],'resources':[],'project_assignments':[],'settings':{},'geodata':{},'news':{'items':[],'sources':[]}}
