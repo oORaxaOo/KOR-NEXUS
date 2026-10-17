@@ -5,6 +5,7 @@ const modules={atlas:{label:'ATLAS',labelEn:'ATLAS',title:'Atlas-Notizen',titleE
 const states=['Baden-Württemberg','Bayern','Berlin','Brandenburg','Bremen','Hamburg','Hessen','Mecklenburg-Vorpommern','Niedersachsen','Nordrhein-Westfalen','Rheinland-Pfalz','Saarland','Sachsen','Sachsen-Anhalt','Schleswig-Holstein','Thüringen'];
 let active='atlas',selectedRegion='Deutschland',lang='de',tasks=[],records=[],newsItems=[],newsSources=[],settings={},health={},backupItems=[],searchText='',toastTimer,recordsLoadSequence=0,newsRefreshPromise=null;
 let mapMode='world',worldGeoJSON=null,stateGeoJSON=null,mapLocations=[],pendingImportData=null;
+let liveCursor=0,liveSource=null,livePollTimer=null,liveRefreshTimer=null,livePollBusy=false;
 const t={
  de:{navLabel:'KOMMANDO / MODULE',atlas:'ATLAS',mapOverview:'Weltlage',projects:'PROJEKTE',projectsSub:'Planung & Aufgaben',archive:'ARCHIV',archiveSub:'Kor-Wissensbasis',simulation:'SIMULATION',simulationSub:'Szenarien & Modelle',database:'DATENBANK',databaseSub:'Lokale Datensätze',news:'NACHRICHTEN',newsSub:'RSS-Quellen',systemStatus:'SYSTEMSTATUS',coreStatus:'KERNSTATUS',localData:'Lokale Daten',backups:'Backups',configure:'KONFIGURIEREN',worldSituation:'Weltlage',tasks:'Aufgaben',newTask:'Neue Aufgabe hinzufügen…',offlineNote:'KEINE INTERNETVERBINDUNG — lokale Daten bleiben verfügbar. Live-Nachrichten sind eventuell veraltet.',atlasNotePlaceholder:'Notiz zur ausgewählten Region…',recordSearch:'Einträge durchsuchen…',newsSearch:'Nachrichten durchsuchen…'},
  en:{navLabel:'COMMAND / MODULES',atlas:'ATLAS',mapOverview:'World view',projects:'PROJECTS',projectsSub:'Planning & tasks',archive:'ARCHIVE',archiveSub:'Kor knowledge base',simulation:'SIMULATION',simulationSub:'Scenarios & models',database:'DATABASE',databaseSub:'Local records',news:'NEWS',newsSub:'RSS feeds',systemStatus:'SYSTEM STATUS',coreStatus:'CORE STATUS',localData:'Local data',backups:'Backups',configure:'CONFIGURE',worldSituation:'World overview',tasks:'Tasks',newTask:'Add a task…',offlineNote:'NO INTERNET CONNECTION — local data remains available. Live news may be out of date.',atlasNotePlaceholder:'Note for the selected region…',recordSearch:'Search entries…',newsSearch:'Search news…'}
@@ -180,6 +181,56 @@ async function loadBackups(){try{const d=await api('/backups');backupItems=d.ite
 function formatBytes(n){if(n<1024)return n+' B';if(n<1024*1024)return (n/1024).toFixed(1)+' KiB';return (n/1024/1024).toFixed(2)+' MiB';}
 async function loadSettings(){try{const d=await api('/settings');settings=d.settings;lang=settings.language||'de';$('#backupKeep').value=settings.backup_keep||'12';$('#backupInterval').value=settings.backup_interval_minutes||'30';$('#settingsDb').textContent='SQLite';$('#unitLabelSingular').value=settings.unit_label_singular||'Mitglied';$('#unitLabelPlural').value=settings.unit_label_plural||'Mitglieder';$('#dataPath').textContent=health.data_dir||'lokal';$('#settingsBackupStatus').textContent=(lang==='de'?'Aktiv, alle ':'Enabled, every ')+(settings.backup_interval_minutes||30)+(lang==='de'?' Min.':' min.');}catch(e){notify(e.message,'error')}}
 async function openSettings(){const m=$('#settingsModal');m.classList.add('open');await Promise.all([loadSettings(),loadBackups()]);}
+async function refreshLiveViews(event){
+ const jobs=[loadTasks()];
+ if(active==='atlas')jobs.push(renderAtlasRecords(),renderMapLocations(),loadLocationReferences());
+ else if(['projects','archive','simulation','database'].includes(active))jobs.push(loadRecords(active));
+ else if(active==='operations')jobs.push(loadOperations());
+ await Promise.allSettled(jobs);
+}
+async function refreshAllLiveViews(){
+ const jobs=[loadTasks(),loadSettings(),loadBackups(),renderAtlasRecords(),renderMapLocations(),loadLocationReferences(),loadOperations()];
+ if(['projects','archive','simulation','database'].includes(active))jobs.push(loadRecords(active));
+ await Promise.allSettled(jobs);
+}
+function scheduleLiveRefresh(event){
+ clearTimeout(liveRefreshTimer);
+ liveRefreshTimer=setTimeout(()=>{refreshLiveViews(event).catch(error=>console.warn('Live-Aktualisierung fehlgeschlagen',error));},250);
+}
+async function pollEventJournal(){
+ if(livePollBusy)return;
+ livePollBusy=true;
+ try{
+  const batch=await api('/events?since='+encodeURIComponent(liveCursor)+'&limit=200');
+  if(batch.reset_required){liveCursor=Number(batch.cursor)||0;await refreshAllLiveViews();return;}
+  for(const event of batch.events||[]){liveCursor=Math.max(liveCursor,Number(event.event_id)||0);scheduleLiveRefresh(event);}
+ }catch(error){console.warn('Ereignis-Polling fehlgeschlagen',error);}
+ finally{livePollBusy=false;}
+}
+function startEventPolling(){
+ if(livePollTimer)return;
+ pollEventJournal();
+ livePollTimer=setInterval(pollEventJournal,2000);
+}
+function startLiveUpdates(){
+ if('EventSource' in window){
+  const source=new EventSource('/api/events/stream?since='+encodeURIComponent(liveCursor));
+  liveSource=source;
+  source.addEventListener('change',event=>{
+   try{const item=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(item.event_id)||0);scheduleLiveRefresh(item);}
+   catch(error){console.warn('Ungültiges Live-Ereignis ignoriert',error);}
+  });
+  source.addEventListener('reset_required',event=>{
+   try{const data=JSON.parse(event.data);liveCursor=Math.max(liveCursor,Number(data.cursor)||0);}catch{}
+   clearTimeout(liveRefreshTimer);
+   liveRefreshTimer=setTimeout(()=>refreshAllLiveViews().catch(error=>console.warn('Live-Snapshot fehlgeschlagen',error)),0);
+  });
+  source.onerror=()=>{
+   if(liveSource!==source)return;
+   source.close();liveSource=null;startEventPolling();
+  };
+ }else startEventPolling();
+}
 async function reloadAll(){const jobs=[loadTasks(),loadSettings(),loadBackups()];if(active==='atlas')jobs.push(renderAtlasRecords());else if(active!=='news')jobs.push(loadRecords(active));await Promise.all(jobs);}
 async function migrateLegacy(){try{if(localStorage.getItem('kor-workstation.migrated-v1'))return;const oldTasks=JSON.parse(localStorage.getItem('kor-workstation.tasks')||'null');const oldRecords=JSON.parse(localStorage.getItem('kor-workstation.records')||'null');if(!oldTasks&&!oldRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const currentTasks=(await api('/tasks')).items;let currentRecords=0;for(const m of ['atlas','projects','archive','simulation','database'])currentRecords+=(await api('/records?module='+m)).items.length;if(currentTasks.length||currentRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const data={schema_version:1,tasks:Array.isArray(oldTasks)?oldTasks:[],records:[]};if(oldRecords&&typeof oldRecords==='object')for(const [module,items] of Object.entries(oldRecords))if(['atlas','projects','archive','simulation','database'].includes(module)&&Array.isArray(items))for(const r of items)data.records.push({...r,module});await api('/import',{method:'POST',body:JSON.stringify({data})});localStorage.setItem('kor-workstation.migrated-v1','1');notify(lang==='de'?'Vorhandene Browserdaten in SQLite übernommen.':'Legacy browser data moved to SQLite.');}catch(e){console.warn('Legacy migration skipped:',e);}}
 let operationUnits=[],operationResources=[],operationProjects=[],operationAssignments=[];
@@ -284,6 +335,6 @@ $('#cancelImport').addEventListener('click',clearImportPreview);
 $('#confirmImport').addEventListener('click',async()=>{if(!pendingImportData||$('#confirmImport').disabled)return;const button=$('#confirmImport');button.disabled=true;button.textContent=lang==='de'?'IMPORT LÄUFT…':'IMPORTING…';try{const r=await api('/import',{method:'POST',body:JSON.stringify({data:pendingImportData})});notify((lang==='de'?'Import abgeschlossen: ':'Import complete: ')+r.tasks+' tasks, '+r.records+' records, '+(r.units??0)+' profiles, '+(r.resources??0)+' resources, '+(r.project_assignments??0)+' assignments.');clearImportPreview();await reloadAll();await loadBackups();}catch(err){notify((lang==='de'?'Import fehlgeschlagen: ':'Import failed: ')+err.message,'error');button.disabled=false;button.textContent=lang==='de'?'ERNEUT VERSUCHEN — DATEN ERSETZEN':'RETRY — REPLACE DATA';}});
 window.addEventListener('online',()=>{$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';$('#offlineNote').hidden=true});window.addEventListener('offline',()=>{$('#connection').textContent=lang==='de'?'● OFFLINE':'● OFFLINE';$('#offlineNote').hidden=false});
 }
-async function init(){wire();wireCommandPalette();renderStates();dateLabel();try{health=await api('/health');$('#coreState').textContent='● READY';$('#dbState').textContent='SQLITE';$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';await loadSettings();await migrateLegacy();await Promise.all([loadTasks(),renderAtlasRecords(),loadBackups(),renderMapLocations(),loadGeographicData()]);await loadNewsCache();setLanguage();await chooseRegion(selectedRegion);document.documentElement.dataset.appReady='true';window.__KOR_APP_READY__=true;}catch(e){$('#coreState').textContent='● FEHLER';$('#connection').textContent='● CORE OFFLINE';$('#offlineNote').hidden=false;notify((lang==='de'?'Kern konnte nicht initialisiert werden: ':'Core initialization failed: ')+e.message,'error');}}
+async function init(){wire();wireCommandPalette();renderStates();dateLabel();try{health=await api('/health');const eventSnapshot=await api('/events?since=0&snapshot=1');liveCursor=Number(eventSnapshot.latest_event_id)||0;$('#coreState').textContent='● READY';$('#dbState').textContent='SQLITE';$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';await loadSettings();await migrateLegacy();await Promise.all([loadTasks(),renderAtlasRecords(),loadBackups(),renderMapLocations(),loadGeographicData()]);await loadNewsCache();setLanguage();await chooseRegion(selectedRegion);startLiveUpdates();document.documentElement.dataset.appReady='true';window.__KOR_APP_READY__=true;}catch(e){$('#coreState').textContent='● FEHLER';$('#connection').textContent='● CORE OFFLINE';$('#offlineNote').hidden=false;notify((lang==='de'?'Kern konnte nicht initialisiert werden: ':'Core initialization failed: ')+e.message,'error');}}
 init();
 })();
