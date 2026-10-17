@@ -186,9 +186,15 @@ class CoreApiTests(unittest.TestCase):
 
     def test_restore_from_pre_journal_backup_reinstalls_additive_schema(self):
         with app.db_connect() as con:
+            # Simulate a genuine pre-journal database, not a table dropped beneath live triggers.
+            for trigger in con.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'event_%'").fetchall():
+                con.execute('DROP TRIGGER IF EXISTS "'+trigger['name'].replace('"','""')+'"')
             con.execute('DROP TABLE event_journal')
             con.execute('DROP TABLE resource_movements')
-            con.execute('DELETE FROM schema_migrations WHERE version IN (6,7)')
+            con.execute('DROP TABLE resource_policies')
+            con.execute('DROP TABLE alerts')
+            con.execute('DROP TABLE engine_runs')
+            con.execute('DELETE FROM schema_migrations WHERE version IN (6,7,8)')
         legacy=app.create_backup('legacy-journal-test')
         status,result=self.req('/api/restore','POST',{'name':legacy['name']})
         self.assertEqual(status,200,result)

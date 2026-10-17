@@ -1170,6 +1170,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     prune_backups()
                     return self.send_json({'ok':True,**counts,'safety_backup':safety,'schema_version':exported['schema_version']})
             except sqlite3.Error as e:
+                print(f'[KOR] Datenbankfehler: {e}',file=sys.stderr)
                 return self.fail(500,'Datenbankfehler; die lokalen Daten wurden nicht absichtlich gelöscht. Details stehen nicht im Browser.')
             except Exception as e:
                 print(f'[KOR] API-Fehler: {e}',file=sys.stderr);return self.fail(500,'Interner Fehler. Siehe lokale Terminalausgabe.')
