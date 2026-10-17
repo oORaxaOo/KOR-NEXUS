@@ -193,7 +193,8 @@ def configured_ai_provider():
     """
     configured = {}
     override_path = os.environ.get('KOR_NEXUS_AI_CONFIG', '').strip()
-    config_home = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')).expanduser()
+    raw_config_home = os.environ.get('XDG_CONFIG_HOME', '').strip()
+    config_home = Path(raw_config_home).expanduser() if raw_config_home else Path.home() / '.config'
     config_path = Path(override_path).expanduser() if override_path else config_home / 'kor-nexus' / 'ai.json'
     try:
         if config_path.is_file() and config_path.stat().st_size <= 65_536:
