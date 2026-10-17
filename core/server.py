@@ -8,10 +8,10 @@ from xml.etree import ElementTree as ET
 
 if __package__:
     from .ai_provider import DisabledAIProvider
-    from .engine import build_engine_status, evaluate_engine
+    from .engine import build_engine_status, evaluate_engine, run_automations
 else:
     from ai_provider import DisabledAIProvider
-    from engine import build_engine_status, evaluate_engine
+    from engine import build_engine_status, evaluate_engine, run_automations
 
 AI_PROVIDER = DisabledAIProvider()
 
@@ -168,6 +168,61 @@ def ensure_task_engine_schema(con):
     con.execute('CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id,depends_on_task_id)')
 
 
+
+def ensure_automation_schema(con):
+    """Install an allowlisted automation registry and explicit critical-action proposals."""
+    con.execute("""CREATE TABLE IF NOT EXISTS automation_rules(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_key TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+        trigger_type TEXT NOT NULL CHECK(trigger_type IN ('manual','resource_low_stock','task_overdue','task_blocked')),
+        action_type TEXT NOT NULL CHECK(action_type IN ('create_task','adjust_resource')),
+        action_json TEXT NOT NULL DEFAULT '{}',
+        risk_level TEXT NOT NULL CHECK(risk_level IN ('routine','critical')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS automation_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER REFERENCES automation_rules(id) ON DELETE SET NULL,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        trigger_entity_type TEXT NOT NULL,
+        trigger_entity_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('executed','proposal_created','failed')),
+        result_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS action_proposals(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        action_type TEXT NOT NULL CHECK(action_type='adjust_resource'),
+        payload_json TEXT NOT NULL,
+        risk_level TEXT NOT NULL CHECK(risk_level='critical'),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','executed','failed')),
+        rationale TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        executed_at TEXT,
+        result_json TEXT NOT NULL DEFAULT '{}'
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS scheduled_jobs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_key TEXT NOT NULL UNIQUE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('engine_evaluate','run_automations')),
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        due_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed','cancelled')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_automation_rules_enabled ON automation_rules(enabled,trigger_type)')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_action_proposals_status ON action_proposals(status,created_at DESC)')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_due ON scheduled_jobs(status,due_at)')
+
+
 def ensure_event_journal_schema(con):
     """Install the additive change journal and triggers without rewriting user data."""
     con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
@@ -182,7 +237,7 @@ def ensure_event_journal_schema(con):
     )""")
     con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
     entities = [
-        ('tasks','task'),('task_dependencies','task_dependency'),('records','record'),('units','unit'),
+        ('tasks','task'),('task_dependencies','task_dependency'),('automation_rules','automation_rule'),('automation_runs','automation_run'),('action_proposals','action_proposal'),('scheduled_jobs','scheduled_job'),('records','record'),('units','unit'),
         ('resources','resource'),('resource_movements','resource_movement'),('resource_policies','resource_policy'),('alerts','alert'),('engine_runs','engine_run'),('project_assignments','assignment'),
         ('map_locations','location')
     ]
@@ -201,6 +256,7 @@ def ensure_event_journal_schema(con):
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(7,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(9,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(10,?)',(utcnow(),))
 
 
 def read_event_batch(con, since, limit=100):
@@ -265,6 +321,7 @@ def initialize():
         ensure_resource_ledger_schema(con)
         ensure_engine_schema(con)
         ensure_task_engine_schema(con)
+        ensure_automation_schema(con)
         ensure_event_journal_schema(con)
         con.commit()
     try: os.chmod(DB_PATH, 0o600)
@@ -381,6 +438,54 @@ def normalize_task_schedule(data, old=None):
     blocked=str(value('blocked_reason','') or '').strip()
     if len(blocked)>1000: raise ValueError('Blockierungsgrund darf höchstens 1.000 Zeichen enthalten.')
     return due,priority,estimated,actual,json.dumps(recurrence,ensure_ascii=False,separators=(',',':')),blocked
+
+
+def automation_rule_dict(row):
+    item=dict(row)
+    try: item['action']=json.loads(item.pop('action_json') or '{}')
+    except (ValueError,TypeError): item['action']={}
+    item['enabled']=bool(item['enabled'])
+    return item
+
+
+def proposal_dict(row):
+    item=dict(row)
+    try: item['payload']=json.loads(item.pop('payload_json') or '{}')
+    except (ValueError,TypeError): item['payload']={}
+    try: item['result']=json.loads(item.pop('result_json') or '{}')
+    except (ValueError,TypeError): item['result']={}
+    return item
+
+
+def normalize_automation_rule(data, old=None):
+    rule_key=str(data.get('rule_key',old['rule_key'] if old is not None else '')).strip()
+    name=str(data.get('name',old['name'] if old is not None else '')).strip()
+    trigger=str(data.get('trigger_type',old['trigger_type'] if old is not None else '')).strip()
+    action_type=str(data.get('action_type',old['action_type'] if old is not None else '')).strip()
+    if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}',rule_key): raise ValueError('rule_key muss 1–80 sichere Zeichen enthalten.')
+    if not name or len(name)>180: raise ValueError('Regelname muss zwischen 1 und 180 Zeichen lang sein.')
+    if trigger not in ('manual','resource_low_stock','task_overdue','task_blocked'): raise ValueError('Unbekannter Auslöser.')
+    if action_type not in ('create_task','adjust_resource'): raise ValueError('Aktion ist nicht freigegeben.')
+    action=data.get('action')
+    if action is None and old is not None:
+        try: action=json.loads(old['action_json'] or '{}')
+        except (ValueError,TypeError): action={}
+    if not isinstance(action,dict): raise ValueError('Aktion muss ein JSON-Objekt sein.')
+    if action_type=='create_task':
+        if any(k not in ('title_prefix','area','blocked_reason') for k in action): raise ValueError('Unbekanntes Feld für create_task.')
+        if len(str(action.get('title_prefix','')))>120 or len(str(action.get('area','Logistik')))>80 or len(str(action.get('blocked_reason','')))>1000: raise ValueError('Automatische Aufgabe enthält zu lange Felder.')
+    else:
+        if trigger!='resource_low_stock': raise ValueError('adjust_resource ist nur beim Auslöser resource_low_stock erlaubt.')
+        if any(k not in ('quantity_delta','notes') for k in action): raise ValueError('Unbekanntes Feld für adjust_resource.')
+        try: delta=float(action.get('quantity_delta'))
+        except (TypeError,ValueError): raise ValueError('quantity_delta muss eine gültige Zahl sein.')
+        if not math.isfinite(delta) or delta<=0 or delta>1e12: raise ValueError('Automatische Bestandsanpassung muss eine positive Menge bis 1e12 sein.')
+        if len(str(action.get('notes','')))>1000: raise ValueError('Notiz darf höchstens 1.000 Zeichen enthalten.')
+        action['quantity_delta']=delta
+    if len(json.dumps(action,ensure_ascii=False))>4000: raise ValueError('Automationsaktion ist zu groß.')
+    enabled=bool(data.get('enabled',old['enabled'] if old is not None else False))
+    risk='critical' if action_type=='adjust_resource' else 'routine'
+    return rule_key,name,trigger,action_type,json.dumps(action,ensure_ascii=False,separators=(',',':')),risk,int(enabled)
 
 
 def task_dict(r): return {'id':r['id'],'title':r['title'],'area':r['area'],'done':bool(r['done']),'due_at':r['due_at'],'priority':r['priority'],'estimated_minutes':r['estimated_minutes'],'actual_minutes':r['actual_minutes'],'recurrence':json.loads(r['recurrence_json'] or '{}'),'blocked_reason':r['blocked_reason'],'created_at':r['created_at'],'updated_at':r['updated_at']}
@@ -1021,6 +1126,16 @@ class AppHandler(BaseHTTPRequestHandler):
                     else:
                         rows=[dict(r) for r in con.execute('SELECT * FROM alerts WHERE status=? ORDER BY updated_at DESC,id DESC LIMIT 500',(status_filter,))]
                 return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
+            if path=='/api/automation/rules':
+                with db_connect() as con: rows=[automation_rule_dict(r) for r in con.execute('SELECT * FROM automation_rules ORDER BY id DESC')]
+                return self.send_json({'items':rows,'count':len(rows)})
+            if path=='/api/actions/proposals':
+                status_filter=q.get('status',['pending'])[0]
+                if status_filter not in ('pending','approved','rejected','executed','failed','all'):return self.fail(400,'Ungültiger Vorschlagsstatus.')
+                with db_connect() as con:
+                    if status_filter=='all': rows=[proposal_dict(r) for r in con.execute('SELECT * FROM action_proposals ORDER BY created_at DESC,id DESC LIMIT 500')]
+                    else: rows=[proposal_dict(r) for r in con.execute('SELECT * FROM action_proposals WHERE status=? ORDER BY created_at DESC,id DESC LIMIT 500',(status_filter,))]
+                return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
             if path=='/api/engine/status':
                 with db_connect() as con: return self.send_json(build_engine_status(con,AI_PROVIDER.status()))
             if path=='/api/ai/status': return self.send_json(AI_PROVIDER.status())
@@ -1134,6 +1249,43 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json({'ok':True,'available':True,'feature_count':len(features),'recognized_state_names':len(found & valid_names),'note':'Geometrien lokal in SQLite und als GeoJSON-Datei gespeichert; Quelle, Lizenz und Namen vor Nutzung prüfen.'},201)
         with _db_lock:
             try:
+                if path=='/api/automation/rules':
+                    try: values=normalize_automation_rule(data)
+                    except ValueError as exc:return self.fail(400,str(exc))
+                    with db_connect() as con:
+                        if con.execute('SELECT 1 FROM automation_rules WHERE rule_key=?',(values[0],)).fetchone():return self.fail(409,'rule_key existiert bereits.')
+                        cur=con.execute('INSERT INTO automation_rules(rule_key,name,trigger_type,action_type,action_json,risk_level,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,now,now))
+                        row=con.execute('SELECT * FROM automation_rules WHERE id=?',(cur.lastrowid,)).fetchone()
+                    return self.send_json({'item':automation_rule_dict(row)},201)
+                if path=='/api/automation/run':
+                    with db_connect() as con: result=run_automations(con,utcnow())
+                    return self.send_json({'ok':True,'result':result},201)
+                proposal_match=re.fullmatch(r'/api/actions/proposals/(\d+)/(approve|reject|execute)',path)
+                if proposal_match:
+                    ident=int(proposal_match.group(1));decision=proposal_match.group(2);now=utcnow()
+                    with db_connect() as con:
+                        proposal=con.execute('SELECT * FROM action_proposals WHERE id=?',(ident,)).fetchone()
+                        if not proposal:return self.fail(404,'Aktionsvorschlag nicht gefunden.')
+                        if decision=='approve':
+                            if proposal['status']!='pending':return self.fail(409,'Nur offene Vorschläge können bestätigt werden.')
+                            con.execute("UPDATE action_proposals SET status='approved',decided_at=? WHERE id=?",(now,ident))
+                        elif decision=='reject':
+                            if proposal['status']!='pending':return self.fail(409,'Nur offene Vorschläge können abgelehnt werden.')
+                            con.execute("UPDATE action_proposals SET status='rejected',decided_at=? WHERE id=?",(now,ident))
+                        else:
+                            if proposal['status']=='executed':return self.send_json({'item':proposal_dict(proposal),'idempotent_replay':True})
+                            if proposal['status']!='approved':return self.fail(409,'Kritische Aktion muss vor der Ausführung ausdrücklich bestätigt werden.')
+                            payload=json.loads(proposal['payload_json'])
+                            resource=con.execute('SELECT * FROM resources WHERE id=?',(int(payload['resource_id']),)).fetchone()
+                            if not resource:return self.fail(404,'Zielressource existiert nicht mehr.')
+                            delta=float(payload['quantity_delta']);new_quantity=float(resource['quantity'])+delta
+                            if not math.isfinite(delta) or delta<=0 or new_quantity>1e12:return self.fail(400,'Bestandsanpassung liegt außerhalb des erlaubten Bereichs.')
+                            con.execute('UPDATE resources SET quantity=?,updated_at=? WHERE id=?',(new_quantity,now,resource['id']))
+                            con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(resource['id'],resource['name'],'adjustment',delta,new_quantity,resource['unit'],str(payload.get('notes','Automationsvorschlag bestätigt'))[:2000],'proposal:'+str(ident),now))
+                            result_json=json.dumps({'resource_id':resource['id'],'quantity_before':resource['quantity'],'quantity_after':new_quantity,'movement_type':'adjustment'},ensure_ascii=False,separators=(',',':'))
+                            con.execute("UPDATE action_proposals SET status='executed',executed_at=?,result_json=? WHERE id=?",(now,result_json,ident))
+                        updated=con.execute('SELECT * FROM action_proposals WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':proposal_dict(updated)})
                 if path=='/api/engine/evaluate':
                     with db_connect() as con: result=evaluate_engine(con,utcnow())
                     return self.send_json({'ok':True,'result':result},201)
@@ -1298,6 +1450,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         ensure_resource_ledger_schema(con)
                         ensure_engine_schema(con)
                         ensure_task_engine_schema(con)
+                        ensure_automation_schema(con)
                         ensure_event_journal_schema(con)
                     return self.send_json({'ok':True,'restored':name,'safety_backup':safety})
                 if path=='/api/import':
@@ -1404,6 +1557,19 @@ class AppHandler(BaseHTTPRequestHandler):
                         con.execute('UPDATE resource_policies SET minimum_quantity=?,target_quantity=?,updated_at=? WHERE resource_id=?',(minimum,target,now,ident))
                         row=con.execute('SELECT p.*,r.name AS resource_name,r.quantity AS current_quantity,r.unit FROM resource_policies p JOIN resources r ON r.id=p.resource_id WHERE p.resource_id=?',(ident,)).fetchone()
                     return self.send_json({'policy':dict(row)})
+                m=re.fullmatch(r'/api/automation/rules/(\d+)',path)
+                if m:
+                    ident=int(m.group(1))
+                    if any(k not in ('name','enabled') for k in data):return self.fail(400,'Nur name und enabled können hier geändert werden.')
+                    with db_connect() as con:
+                        old=con.execute('SELECT * FROM automation_rules WHERE id=?',(ident,)).fetchone()
+                        if not old:return self.fail(404,'Automationsregel nicht gefunden.')
+                        name=str(data.get('name',old['name'])).strip()
+                        if not name or len(name)>180:return self.fail(400,'Regelname muss zwischen 1 und 180 Zeichen lang sein.')
+                        enabled=int(bool(data.get('enabled',old['enabled'])))
+                        con.execute('UPDATE automation_rules SET name=?,enabled=?,updated_at=? WHERE id=?',(name,enabled,now,ident))
+                        row=con.execute('SELECT * FROM automation_rules WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':automation_rule_dict(row)})
                 if path=='/api/settings':
                     allowed={'language','backup_keep','backup_interval_minutes','unit_label_singular','unit_label_plural'}
                     if any(k not in allowed for k in data):return self.fail(400,'Unbekannte Einstellung.')
@@ -1425,6 +1591,10 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         with _db_lock:
             try:
+                m=re.fullmatch(r'/api/automation/rules/(\d+)',path)
+                if m:
+                    with db_connect() as con:con.execute('DELETE FROM automation_rules WHERE id=?',(int(m.group(1)),))
+                    return self.send_json({'ok':True})
                 m=re.fullmatch(r'/api/task-dependencies/(\d+)',path)
                 if m:
                     with db_connect() as con:con.execute('DELETE FROM task_dependencies WHERE id=?',(int(m.group(1)),))

@@ -63,6 +63,48 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_automation_rules_are_idempotent_and_critical_actions_require_approval(self):
+        _,resource=self.req('/api/resources','POST',{'name':'Automation-Ressource','quantity':1,'unit':'Kisten'})
+        resource_id=resource['item']['id']
+        self.req(f'/api/resources/{resource_id}/policy','PATCH',{'minimum_quantity':3})
+        status,safe=self.req('/api/automation/rules','POST',{'rule_key':'low-stock-task','name':'Nachbestellaufgabe','trigger_type':'resource_low_stock','action_type':'create_task','action':{'title_prefix':'Nachbestellen: ','area':'Logistik'},'enabled':True})
+        self.assertEqual(status,201)
+        status,critical=self.req('/api/automation/rules','POST',{'rule_key':'low-stock-adjust','name':'Bestand anpassen','trigger_type':'resource_low_stock','action_type':'adjust_resource','action':{'quantity_delta':2,'notes':'Vorgeschlagener Wareneingang'},'enabled':True})
+        self.assertEqual(status,201)
+        status,run=self.req('/api/automation/run','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(run['result']['actions_executed'],1)
+        self.assertEqual(run['result']['proposals_created'],1)
+        tasks=self.req('/api/tasks')[1]['items']
+        self.assertEqual(sum(1 for task in tasks if task['title']=='Nachbestellen: Automation-Ressource'),1)
+        status,proposals=self.req('/api/actions/proposals?status=pending')
+        self.assertEqual(status,200)
+        self.assertEqual(proposals['count'],1)
+        proposal=proposals['items'][0]
+        self.assertEqual(proposal['risk_level'],'critical')
+        self.assertEqual(self.req(f"/api/actions/proposals/{proposal['id']}/execute",'POST',{})[0],409)
+        status,again=self.req('/api/automation/run','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(again['result']['already_run'],2)
+        self.assertEqual(sum(1 for task in self.req('/api/tasks')[1]['items'] if task['title']=='Nachbestellen: Automation-Ressource'),1)
+        status,approved=self.req(f"/api/actions/proposals/{proposal['id']}/approve",'POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(approved['item']['status'],'approved')
+        status,executed=self.req(f"/api/actions/proposals/{proposal['id']}/execute",'POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(executed['item']['status'],'executed')
+        status,resource_after=self.req('/api/resources')
+        self.assertEqual(resource_after['items'][0]['quantity'],3)
+        status,replay=self.req(f"/api/actions/proposals/{proposal['id']}/execute",'POST',{})
+        self.assertEqual(status,200)
+        self.assertTrue(replay['idempotent_replay'])
+        self.assertEqual(self.req('/api/actions/proposals?status=pending')[1]['count'],0)
+
+    def test_automation_rules_reject_unknown_actions_and_bad_keys(self):
+        self.assertEqual(self.req('/api/automation/rules','POST',{'rule_key':'unsafe','name':'Unsafe','trigger_type':'manual','action_type':'run_shell','action':{},'enabled':True})[0],400)
+        self.assertEqual(self.req('/api/automation/rules','POST',{'rule_key':'bad key','name':'Bad key','trigger_type':'manual','action_type':'create_task','action':{},'enabled':True})[0],400)
+        self.assertEqual(self.req('/api/automation/rules','POST',{'rule_key':'manual-adjust','name':'Manual adjust','trigger_type':'manual','action_type':'adjust_resource','action':{'quantity_delta':2},'enabled':True})[0],400)
+
     def test_task_dependencies_roundtrip_remaps_both_task_ids(self):
         _,first=self.req('/api/tasks','POST',{'title':'Abhängigkeit A'})
         _,second=self.req('/api/tasks','POST',{'title':'Abhängigkeit B'})

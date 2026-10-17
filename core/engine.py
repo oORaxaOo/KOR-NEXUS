@@ -13,6 +13,50 @@ def _count(con, sql, params=()):
 
 
 
+
+def run_automations(con, now):
+    """Run enabled allowlisted rules once per entity per UTC day; critical actions only create proposals."""
+    today=str(now)[:10]
+    rules=con.execute('SELECT * FROM automation_rules WHERE enabled=1 ORDER BY id').fetchall()
+    summary={'rules_evaluated':len(rules),'actions_executed':0,'proposals_created':0,'already_run':0,'llm_used':False}
+    for rule in rules:
+        action=json.loads(rule['action_json'] or '{}')
+        trigger=rule['trigger_type']
+        if trigger=='manual':
+            candidates=[{'entity_type':'system','entity_id':'manual','name':'System'}]
+        elif trigger=='resource_low_stock':
+            candidates=[{'entity_type':'resource','entity_id':str(r['id']),'name':r['name']} for r in con.execute('SELECT r.id,r.name FROM resources r JOIN resource_policies p ON p.resource_id=r.id WHERE r.quantity<p.minimum_quantity ORDER BY r.id')]
+        elif trigger=='task_overdue':
+            candidates=[{'entity_type':'task','entity_id':str(r['id']),'name':r['title']} for r in con.execute('SELECT id,title FROM tasks WHERE done=0 AND due_at IS NOT NULL AND due_at<? ORDER BY id',(today,))]
+        else:
+            candidates=[{'entity_type':'task','entity_id':str(r['id']),'name':r['title']} for r in con.execute("""SELECT t.id,t.title FROM tasks t WHERE t.done=0 AND EXISTS (
+                SELECT 1 FROM task_dependencies d JOIN tasks parent ON parent.id=d.depends_on_task_id
+                WHERE d.task_id=t.id AND parent.done=0) ORDER BY t.id""")]
+        for candidate in candidates:
+            key=f"rule:{rule['id']}:{candidate['entity_type']}:{candidate['entity_id']}:{today}"
+            if con.execute('SELECT 1 FROM automation_runs WHERE idempotency_key=?',(key,)).fetchone():
+                summary['already_run']+=1
+                continue
+            if rule['action_type']=='create_task':
+                prefix=str(action.get('title_prefix') or (rule['name']+': '))
+                title=(prefix+candidate['name'])[:180]
+                area=str(action.get('area','Logistik'))[:80] or 'SYSTEM'
+                blocked=str(action.get('blocked_reason',''))[:1000]
+                cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at,blocked_reason) VALUES(?,?,0,?,?,?)',(title,area,now,now,blocked))
+                result={'task_id':cur.lastrowid,'title':title}
+                status='executed'
+                summary['actions_executed']+=1
+            else:
+                payload={'resource_id':int(candidate['entity_id']),'quantity_delta':float(action['quantity_delta']),'notes':str(action.get('notes') or (rule['name']+' — ausdrücklich zu bestätigen'))[:1000]}
+                con.execute('INSERT OR IGNORE INTO action_proposals(idempotency_key,action_type,payload_json,risk_level,status,rationale,created_at) VALUES(?,?,?,?,?,?,?)',(key,'adjust_resource',json.dumps(payload,ensure_ascii=False,separators=(',',':')),'critical','pending',rule['name'],now))
+                proposal=con.execute('SELECT id FROM action_proposals WHERE idempotency_key=?',(key,)).fetchone()
+                result={'proposal_id':proposal['id'],'requires_confirmation':True}
+                status='proposal_created'
+                summary['proposals_created']+=1
+            con.execute('INSERT INTO automation_runs(rule_id,idempotency_key,trigger_entity_type,trigger_entity_id,status,result_json,created_at) VALUES(?,?,?,?,?,?,?)',(rule['id'],key,candidate['entity_type'],candidate['entity_id'],status,json.dumps(result,ensure_ascii=False,separators=(',',':')),now))
+    return summary
+
+
 def evaluate_engine(con, now):
     """Run deterministic stock-policy rules without AI, network access, or destructive actions."""
     run=con.execute("INSERT INTO engine_runs(started_at,status,summary_json) VALUES(?,'running','{}')",(now,))
@@ -71,6 +115,9 @@ def build_engine_status(con, ai_status):
         'assignments': _count(con, 'SELECT COUNT(*) FROM project_assignments'),
         'resource_policies': _count(con, 'SELECT COUNT(*) FROM resource_policies') if 'resource_policies' in tables else 0,
         'open_alerts': _count(con, "SELECT COUNT(*) FROM alerts WHERE status IN ('open','acknowledged')") if 'alerts' in tables else 0,
+        'enabled_automation_rules': _count(con, 'SELECT COUNT(*) FROM automation_rules WHERE enabled=1') if 'automation_rules' in tables else 0,
+        'pending_action_proposals': _count(con, "SELECT COUNT(*) FROM action_proposals WHERE status='pending'") if 'action_proposals' in tables else 0,
+        'pending_scheduled_jobs': _count(con, "SELECT COUNT(*) FROM scheduled_jobs WHERE status='pending'") if 'scheduled_jobs' in tables else 0,
     }
     checks = [
         {'name': 'sqlite_integrity', 'ok': integrity == 'ok', 'detail': integrity},
