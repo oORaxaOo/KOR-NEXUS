@@ -11,10 +11,10 @@ Stand: 2026-10-17 · Version 1.20.0 · Schwerpunkt: Core Engine, Live-Updates un
 - [x] Kritische Ressourcenänderungen werden als Aktionsvorschläge gespeichert und benötigen eine bestätigte Freigabe; Routinen sind idempotent.
 - [x] Core-Engine-/Automationsarbeitsbereich in der UI; provider-neutraler KI-Vertrag mit standardmäßig deaktiviertem Provider.
 - [x] JSON-Schema 2, Backup/Restore und ältere Datenbankstände bleiben durch additive Migrationen und Kompatibilitätstests unterstützt.
-- [x] Letzter grüner Release-Gate: 47 API-Tests, Browser-Smoke-Test sowie nativer Arch-Paketbau und isolierter Installationstest erfolgreich ([Workflow](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39032128627)).
+- [x] Letzter grüner Release-Gate: 48 API-Tests einschließlich SSE-Replay und Live-Delivery mit zwei Clients, Browser-Smoke-Test sowie nativer Arch-Paketbau und isolierter Installationstest erfolgreich ([Workflow](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39032781743)).
 - [ ] Native llama.cpp-Laufzeit und Modellverwaltung — bewusst zurückgestellt, bis der Kern abschließend stabilisiert ist.
 - [x] Client wechselt nach Polling-Fallback periodisch zurück zu SSE, dedupliziert Ereignisse und setzt den Cursor bei einem Reset auch nach einer Datenbankwiederherstellung korrekt zurück.
-- [ ] Eine echte Ende-zu-Ende-Prüfung mit mehreren gleichzeitigen SSE-Clients steht noch aus.
+- [x] Ende-zu-Ende-Prüfung bestätigt Replay bereits committeter Ereignisse und Live-Delivery an zwei gleichzeitige SSE-Clients; der Client dedupliziert Events und versucht nach Polling-Fallback erneut SSE.
 - [x] Alle Änderungen bleiben auf dem Arbeitsbranch; `main` wurde nicht direkt verändert.
 
 
