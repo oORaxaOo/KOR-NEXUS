@@ -100,9 +100,16 @@ with sync_playwright() as p:
   print('WARN: Chromium-Start überschritt 45 Sekunden; ein kontrollierter zweiter Versuch folgt.')
   browser=p.chromium.launch(**{**opts,'timeout':60000},args=launch_args)
  try:
-  page=browser.new_page(viewport={'width':1440,'height':1000});page.on('pageerror',lambda e:errors.append(str(e)))
+  page=browser.new_page(viewport={'width':1440,'height':1000});page.on('pageerror',lambda e:errors.append('PAGEERROR: '+str(e)));page.on('console',lambda msg:errors.append('CONSOLE '+msg.type+': '+msg.text) if msg.type=='error' else None)
   page.set_content(html,wait_until='domcontentloaded',timeout=10000)
-  page.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
+  try:
+   page.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
+  except PlaywrightTimeoutError:
+   print('DIAGNOSTIC: toast='+repr(page.locator('#toast').inner_text() if page.locator('#toast').count() else '<missing>'))
+   print('DIAGNOSTIC: connection='+repr(page.locator('#connection').inner_text() if page.locator('#connection').count() else '<missing>'))
+   print('DIAGNOSTIC: requests='+repr(page.evaluate('window.__qaRequests')))
+   print('DIAGNOSTIC: browser_errors='+repr(errors))
+   raise
   assert page.title()=='KOR-NEXUS // COMMAND NEXUS'
   assert page.locator('#nav button').count()==8
   assert page.locator('#stateGrid .state-button').count()==16
