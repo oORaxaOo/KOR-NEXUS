@@ -59,7 +59,7 @@ Die Konfiguration kann beispielsweise so aussehen:
 }
 ```
 
-Die Laufzeit lädt das Modell erst bei der ersten Anfrage. Kontextfenster und Antwortlänge sind begrenzt. Ein fehlendes Paket, ein ungültiger Modellpfad oder ein Ladefehler deaktiviert nicht die Kern-Engine. Es gibt keinen automatischen Modell-Download und keinen verpflichtenden Netzwerkdienst. Die Installation von `llama-cpp-python` kann abhängig von Plattform und Hardware Zeit benötigen und benötigt beim Setup Internetzugriff, sofern kein passendes Paket lokal verfügbar ist.
+Die Laufzeit lädt das Modell erst bei der ersten Anfrage. Kontextfenster und Antwortlänge sind begrenzt. Die Oberfläche vergleicht die GGUF-Dateigröße grob mit dem aktuell verfügbaren RAM und warnt, wenn die Datei größer ist; KV-Cache und Backend benötigen zusätzlichen Speicher. Ein fehlendes Paket, ein ungültiger Modellpfad oder ein Ladefehler deaktiviert nicht die Kern-Engine. Es gibt keinen automatischen Modell-Download und keinen verpflichtenden Netzwerkdienst. Die Installation von `llama-cpp-python` kann abhängig von Plattform und Hardware Zeit benötigen und benötigt beim Setup Internetzugriff, sofern kein passendes Paket lokal verfügbar ist.
 
 ## Historische technische Änderungen
 
