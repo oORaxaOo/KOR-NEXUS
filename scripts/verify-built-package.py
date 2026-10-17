@@ -19,6 +19,7 @@ for expected in (
     "opt/kor-workstation/core/server.py",
     "opt/kor-workstation/core/engine.py",
     "opt/kor-workstation/core/ai_provider.py",
+    "opt/kor-workstation/scripts/setup-local-ai.sh",
     "opt/kor-workstation/web/geodata/world.geojson",
     "usr/bin/kor-workstation",
     "usr/bin/kor-workstation-stop",
