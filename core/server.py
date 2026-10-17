@@ -91,7 +91,7 @@ def ensure_event_journal_schema(con):
                 BEGIN
                   INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
                   VALUES(lower(hex(randomblob(16))),strftime('%Y-%m-%dT%H:%M:%fZ','now'),'{entity}',
-                         CAST({alias}.id AS TEXT),'{event_type}','{"id":' || {alias}.id || '}',1);
+                         CAST({alias}.id AS TEXT),'{event_type}','{{"id":' || {alias}.id || '}}',1);
                 END""")
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)',(utcnow(),))
 
