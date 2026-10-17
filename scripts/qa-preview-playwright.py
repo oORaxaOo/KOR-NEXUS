@@ -94,6 +94,7 @@ with sync_playwright() as p:
   assert page.locator('#stateGrid .state-button').count()==16
   page.locator('#commandPaletteBtn').click();page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('nachrichten');assert page.locator('#commandResults .command-result').count()>=1;assert 'NACHRICHTEN' in page.locator('#commandResults').inner_text();page.keyboard.press('Enter');page.wait_for_function("document.querySelector('#moduleTitle').textContent.includes('Nachrichten') || document.querySelector('#newsView').hidden===false",timeout=3000)
   page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('task erstellen');assert page.locator('#commandResults .command-result').count()==1;page.locator('#closeCommandPalette').click();page.locator('#commandPalette').wait_for(state='hidden')
+  page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('kein-befehl-darf-das-treffen');assert page.locator('#commandResults .command-result').count()==0;assert page.locator('.command-empty').is_visible();page.keyboard.press('Escape');page.locator('#commandPalette').wait_for(state='hidden')
   print('PASS: Befehlssuche per Klick und Ctrl+K, Filterung, Enter-Navigation und Schließen')
   print('PASS: UI startet, 8 Module und 16 Bundesländerindex-Elemente sind sichtbar')
   page.locator('#nav [data-module=workbench]').click();page.locator('#workbenchView').wait_for(state='visible')
