@@ -1,6 +1,8 @@
 """Deterministic, read-only status calculations for KOR-NEXUS."""
 from __future__ import annotations
 
+import json
+
 ENGINE_VERSION = '0.1.0'
 MODULES = ('atlas', 'projects', 'archive', 'simulation', 'database')
 
@@ -8,6 +10,42 @@ MODULES = ('atlas', 'projects', 'archive', 'simulation', 'database')
 def _count(con, sql, params=()):
     row = con.execute(sql, params).fetchone()
     return int(row[0] or 0)
+
+
+
+def evaluate_engine(con, now):
+    """Run deterministic stock-policy rules without AI, network access, or destructive actions."""
+    run=con.execute("INSERT INTO engine_runs(started_at,status,summary_json) VALUES(?,'running','{}')",(now,))
+    run_id=run.lastrowid
+    low_resources=set()
+    affected=0
+    rows=con.execute("""SELECT r.id,r.name,r.quantity,r.unit,p.minimum_quantity
+        FROM resources r JOIN resource_policies p ON p.resource_id=r.id ORDER BY r.id""").fetchall()
+    for row in rows:
+        quantity=float(row['quantity']); minimum=float(row['minimum_quantity'])
+        if quantity >= minimum: continue
+        resource_id=int(row['id']); low_resources.add(str(resource_id))
+        key='resource-low:'+str(resource_id)
+        severity='critical' if quantity<=0 else 'warning'
+        message=f"{row['name']}: Bestand {quantity:g} {row['unit']}; Mindestbestand {minimum:g}."
+        existing=con.execute('SELECT * FROM alerts WHERE alert_key=?',(key,)).fetchone()
+        if existing:
+            status='acknowledged' if existing['status']=='acknowledged' else 'open'
+            con.execute('UPDATE alerts SET severity=?,message=?,status=?,updated_at=?,resolved_at=NULL WHERE id=?',(severity,message,status,now,existing['id']))
+        else:
+            con.execute('INSERT INTO alerts(alert_key,severity,category,title,message,entity_type,entity_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (key,severity,'resource_stock_low','Bestand unter Mindestbestand',message,'resource',str(resource_id),'open',now,now))
+        affected+=1
+    resolved=0
+    for alert in con.execute("SELECT id,entity_id FROM alerts WHERE category='resource_stock_low' AND status IN ('open','acknowledged')").fetchall():
+        if str(alert['entity_id']) not in low_resources:
+            con.execute("UPDATE alerts SET status='resolved',resolved_at=?,updated_at=? WHERE id=?",(now,now,alert['id']))
+            resolved+=1
+    open_count=con.execute("SELECT COUNT(*) FROM alerts WHERE status='open'").fetchone()[0]
+    acknowledged_count=con.execute("SELECT COUNT(*) FROM alerts WHERE status='acknowledged'").fetchone()[0]
+    summary={'run_id':run_id,'low_stock_resources':len(low_resources),'alerts_created_or_updated':affected,'alerts_resolved':resolved,'open_alerts':int(open_count),'acknowledged_alerts':int(acknowledged_count),'llm_used':False}
+    con.execute("UPDATE engine_runs SET completed_at=?,status='completed',summary_json=? WHERE id=?",(now,json.dumps(summary,ensure_ascii=False,separators=(',',':')),run_id))
+    return summary
 
 
 def build_engine_status(con, ai_status):

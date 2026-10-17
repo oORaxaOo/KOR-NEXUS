@@ -3,7 +3,7 @@
 Stand: 2026-10-17  
 Zielbranch: `transfer/kor-nexus-1.20.0`  
 Ausgangsbasis: `main` enthält den integrierten Stand 1.20.0; alle weiteren Änderungen erfolgen ausschließlich im Arbeitsbranch.  
-Status: Phase 0 und Phase 1 abgeschlossen (additives Ereignisjournal, REST-Replay, SSE, Polling-Rückfall und Wiederherstellungskompatibilität). Phase 2 in Arbeit: deterministische, schreibgeschützte Engine-Statusberechnung, ein standardmäßig deaktivierter AI-Provider-Vertrag sowie ein additives Ressourcen-Bewegungsledger mit Eröffnungsbestand, Import-Snapshots, Idempotenz und Negativbestands-Schutz sind implementiert. Ressourcenrichtlinien, Automationsregeln, Freigabe-Workflows, Aufgabenabhängigkeiten und llama.cpp-Laufzeit sind noch offen.
+Status: Phase 0 und Phase 1 abgeschlossen (additives Ereignisjournal, REST-Replay, SSE, Polling-Rückfall und Wiederherstellungskompatibilität). Phase 2 in Arbeit: deterministische, schreibgeschützte Engine-Statusberechnung, ein standardmäßig deaktivierter AI-Provider-Vertrag sowie ein additives Ressourcen-Bewegungsledger mit Eröffnungsbestand, Import-Snapshots, Idempotenz und Negativbestands-Schutz sind implementiert. Mindest-/Zielbestandsrichtlinien, deterministische Bestandswarnungen, idempotente Alert-Auswertung und Bestätigung offener Alerts sind implementiert. Portable Sicherung dieser neuen Einstellungen, Automationsregeln, Freigabe-Workflows für kritische Aktionen, Aufgabenabhängigkeiten und llama.cpp-Laufzeit folgen.
 
 ## 1. Verbindliche Architekturentscheidungen
 

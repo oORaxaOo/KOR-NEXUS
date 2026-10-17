@@ -8,10 +8,10 @@ from xml.etree import ElementTree as ET
 
 if __package__:
     from .ai_provider import DisabledAIProvider
-    from .engine import build_engine_status
+    from .engine import build_engine_status, evaluate_engine
 else:
     from ai_provider import DisabledAIProvider
-    from engine import build_engine_status
+    from engine import build_engine_status, evaluate_engine
 
 AI_PROVIDER = DisabledAIProvider()
 
@@ -104,6 +104,44 @@ def ensure_resource_ledger_schema(con):
             FROM resources""")
 
 
+
+def ensure_engine_schema(con):
+    """Create deterministic engine monitoring tables and default stock policies."""
+    con.execute("""CREATE TABLE IF NOT EXISTS resource_policies(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id INTEGER NOT NULL UNIQUE REFERENCES resources(id) ON DELETE CASCADE,
+        minimum_quantity REAL NOT NULL DEFAULT 0 CHECK(minimum_quantity BETWEEN 0 AND 1000000000000),
+        target_quantity REAL CHECK(target_quantity IS NULL OR (target_quantity >= minimum_quantity AND target_quantity <= 1000000000000)),
+        updated_at TEXT NOT NULL
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_resource_policies_resource ON resource_policies(resource_id)')
+    con.execute("""CREATE TABLE IF NOT EXISTS alerts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_key TEXT NOT NULL UNIQUE,
+        severity TEXT NOT NULL CHECK(severity IN ('info','warning','critical')),
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id TEXT,
+        status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','acknowledged','resolved')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        resolved_at TEXT
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status,updated_at DESC)')
+    con.execute("""CREATE TABLE IF NOT EXISTS engine_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        status TEXT NOT NULL CHECK(status IN ('running','completed','failed')),
+        summary_json TEXT NOT NULL DEFAULT '{}'
+    )""")
+    con.execute("""INSERT OR IGNORE INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at)
+        SELECT id,0,NULL,updated_at FROM resources""")
+
+
 def ensure_event_journal_schema(con):
     """Install the additive change journal and triggers without rewriting user data."""
     con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
@@ -119,7 +157,7 @@ def ensure_event_journal_schema(con):
     con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
     entities = [
         ('tasks','task'),('records','record'),('units','unit'),
-        ('resources','resource'),('resource_movements','resource_movement'),('project_assignments','assignment'),
+        ('resources','resource'),('resource_movements','resource_movement'),('resource_policies','resource_policy'),('alerts','alert'),('engine_runs','engine_run'),('project_assignments','assignment'),
         ('map_locations','location')
     ]
     for table, entity in entities:
@@ -135,6 +173,7 @@ def ensure_event_journal_schema(con):
                 END""")
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(7,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)',(utcnow(),))
 
 
 def read_event_batch(con, since, limit=100):
@@ -197,6 +236,7 @@ def initialize():
         for k,v in [('language','de'),('backup_keep',str(BACKUP_KEEP)),('backup_interval_minutes','30'),('last_news_refresh',''),('unit_label_singular','Mitglied'),('unit_label_plural','Mitglieder')]:
             con.execute('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)',(k,v,utcnow()))
         ensure_resource_ledger_schema(con)
+        ensure_engine_schema(con)
         ensure_event_journal_schema(con)
         con.commit()
     try: os.chmod(DB_PATH, 0o600)
@@ -650,6 +690,7 @@ def apply_portable_import(con, payload, now):
         for r in data['resources']:
             cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(r['name']).strip(),str(r.get('category','Allgemein'))[:80],float(r.get('quantity',0)),str(r.get('unit','Stück'))[:40],str(r.get('location',''))[:180],str(r.get('notes',''))[:10000],str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
             resource_row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+            con.execute('INSERT OR IGNORE INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at) VALUES(?,0,NULL,?)',(cur.lastrowid,now))
             if str(r.get('id')) not in movement_resource_ids:
                 con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,resource_row['name'],'import_snapshot',resource_row['quantity'],resource_row['quantity'],resource_row['unit'],'Bestand aus Schema-2-Import übernommen; historische Bewegungen sind unbekannt.','import-snapshot:'+uuid.uuid4().hex,now))
             if r.get('id') is not None: resource_map[str(r['id'])]=cur.lastrowid
@@ -833,6 +874,22 @@ class AppHandler(BaseHTTPRequestHandler):
         if path=='/api/events/stream': return self.stream_events(q)
         if path.startswith('/api/'):
             maybe_backup()
+            m=re.fullmatch(r'/api/resources/(\d+)/policy',path)
+            if m:
+                ident=int(m.group(1))
+                with db_connect() as con:
+                    row=con.execute('SELECT p.*,r.name AS resource_name,r.quantity AS current_quantity,r.unit FROM resource_policies p JOIN resources r ON r.id=p.resource_id WHERE p.resource_id=?',(ident,)).fetchone()
+                if not row:return self.fail(404,'Ressource oder Bestandsrichtlinie nicht gefunden.')
+                return self.send_json({'policy':dict(row)})
+            if path=='/api/engine/alerts':
+                status_filter=q.get('status',['open'])[0]
+                if status_filter not in ('open','acknowledged','resolved','all'):return self.fail(400,'Ungültiger Alert-Status.')
+                with db_connect() as con:
+                    if status_filter=='all':
+                        rows=[dict(r) for r in con.execute("SELECT * FROM alerts ORDER BY updated_at DESC,id DESC LIMIT 500")]
+                    else:
+                        rows=[dict(r) for r in con.execute('SELECT * FROM alerts WHERE status=? ORDER BY updated_at DESC,id DESC LIMIT 500',(status_filter,))]
+                return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
             if path=='/api/engine/status':
                 with db_connect() as con: return self.send_json(build_engine_status(con,AI_PROVIDER.status()))
             if path=='/api/ai/status': return self.send_json(AI_PROVIDER.status())
@@ -939,6 +996,19 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json({'ok':True,'available':True,'feature_count':len(features),'recognized_state_names':len(found & valid_names),'note':'Geometrien lokal in SQLite und als GeoJSON-Datei gespeichert; Quelle, Lizenz und Namen vor Nutzung prüfen.'},201)
         with _db_lock:
             try:
+                if path=='/api/engine/evaluate':
+                    with db_connect() as con: result=evaluate_engine(con,utcnow())
+                    return self.send_json({'ok':True,'result':result},201)
+                m=re.fullmatch(r'/api/engine/alerts/(\d+)/acknowledge',path)
+                if m:
+                    ident=int(m.group(1));now=utcnow()
+                    with db_connect() as con:
+                        alert=con.execute('SELECT * FROM alerts WHERE id=?',(ident,)).fetchone()
+                        if not alert:return self.fail(404,'Alert nicht gefunden.')
+                        if alert['status']=='resolved':return self.fail(409,'Ein bereits aufgelöster Alert kann nicht bestätigt werden.')
+                        con.execute("UPDATE alerts SET status='acknowledged',acknowledged_at=?,updated_at=? WHERE id=?",(now,now,ident))
+                        updated=con.execute('SELECT * FROM alerts WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':dict(updated)})
                 m=re.fullmatch(r'/api/resources/(\d+)/movements',path)
                 if m:
                     ident=int(m.group(1))
@@ -1020,6 +1090,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     with db_connect() as con:
                         cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(name,str(data.get('category','Allgemein'))[:80],qty,str(data.get('unit','Stück'))[:40],str(data.get('location',''))[:180],str(data.get('notes',''))[:10000],now,now))
                         row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+                        con.execute('INSERT OR IGNORE INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at) VALUES(?,0,NULL,?)',(cur.lastrowid,now))
                         con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,row['name'],'opening_balance',qty,qty,row['unit'],'Eröffnungsbestand bei Erstellung.','resource-create:'+str(cur.lastrowid),now))
                     return self.send_json({'item':dict(row)},201)
                 if path=='/api/assignments':
@@ -1066,6 +1137,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     # Older backups predate the event journal; restore the additive schema in-place.
                     with _db_lock, db_connect() as con:
                         ensure_resource_ledger_schema(con)
+                        ensure_engine_schema(con)
                         ensure_event_journal_schema(con)
                     return self.send_json({'ok':True,'restored':name,'safety_backup':safety})
                 if path=='/api/import':
@@ -1149,6 +1221,26 @@ class AppHandler(BaseHTTPRequestHandler):
                         con.execute('UPDATE map_locations SET title=?,kind=?,region=?,latitude=?,longitude=?,project_id=?,notes=?,updated_at=?,status=?,progress=?,task_id=?,unit_id=?,resource_id=? WHERE id=?',(title,kind,region,lat,lon,refs['project_id'],notes,now,status,progress,refs['task_id'],refs['unit_id'],refs['resource_id'],ident))
                         row=con.execute('SELECT l.*,p.title AS project_title,t.title AS task_title,u.name AS unit_name,rs.name AS resource_name FROM map_locations l LEFT JOIN records p ON p.id=l.project_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN resources rs ON rs.id=l.resource_id WHERE l.id=?',(ident,)).fetchone()
                     return self.send_json({'item':dict(row)})
+                m=re.fullmatch(r'/api/resources/(\d+)/policy',path)
+                if m:
+                    ident=int(m.group(1))
+                    if any(k not in ('minimum_quantity','target_quantity') for k in data):return self.fail(400,'Unbekanntes Feld für Bestandsrichtlinie.')
+                    with db_connect() as con:
+                        if not con.execute('SELECT 1 FROM resources WHERE id=?',(ident,)).fetchone():return self.fail(404,'Ressource nicht gefunden.')
+                        old=con.execute('SELECT * FROM resource_policies WHERE resource_id=?',(ident,)).fetchone()
+                        if not old:
+                            con.execute('INSERT INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at) VALUES(?,0,NULL,?)',(ident,now))
+                            old=con.execute('SELECT * FROM resource_policies WHERE resource_id=?',(ident,)).fetchone()
+                        try:
+                            minimum=float(data.get('minimum_quantity',old['minimum_quantity']))
+                            target_value=data.get('target_quantity',old['target_quantity'])
+                            target=None if target_value in (None,'') else float(target_value)
+                        except (TypeError,ValueError):return self.fail(400,'Mindest- und Zielbestand müssen gültige Zahlen sein.')
+                        if not math.isfinite(minimum) or minimum<0 or minimum>1e12:return self.fail(400,'Mindestbestand muss zwischen 0 und 1e12 liegen.')
+                        if target is not None and (not math.isfinite(target) or target<minimum or target>1e12):return self.fail(400,'Zielbestand muss mindestens dem Mindestbestand entsprechen und höchstens 1e12 sein.')
+                        con.execute('UPDATE resource_policies SET minimum_quantity=?,target_quantity=?,updated_at=? WHERE resource_id=?',(minimum,target,now,ident))
+                        row=con.execute('SELECT p.*,r.name AS resource_name,r.quantity AS current_quantity,r.unit FROM resource_policies p JOIN resources r ON r.id=p.resource_id WHERE p.resource_id=?',(ident,)).fetchone()
+                    return self.send_json({'policy':dict(row)})
                 if path=='/api/settings':
                     allowed={'language','backup_keep','backup_interval_minutes','unit_label_singular','unit_label_plural'}
                     if any(k not in allowed for k in data):return self.fail(400,'Unbekannte Einstellung.')

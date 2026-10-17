@@ -63,6 +63,43 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_resource_policy_alerts_are_idempotent_and_resolve(self):
+        _,created=self.req('/api/resources','POST',{'name':'Mindestbestand-Test','quantity':2,'unit':'Kisten'})
+        resource_id=created['item']['id']
+        status,policy=self.req(f'/api/resources/{resource_id}/policy')
+        self.assertEqual(status,200)
+        self.assertEqual(policy['policy']['minimum_quantity'],0)
+        status,policy=self.req(f'/api/resources/{resource_id}/policy','PATCH',{'minimum_quantity':3,'target_quantity':10})
+        self.assertEqual(status,200)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/policy','PATCH',{'minimum_quantity':9,'target_quantity':4})[0],400)
+        status,run=self.req('/api/engine/evaluate','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(run['result']['low_stock_resources'],1)
+        self.assertEqual(run['result']['open_alerts'],1)
+        status,alerts=self.req('/api/engine/alerts?status=open')
+        self.assertEqual(status,200)
+        self.assertEqual(alerts['count'],1)
+        alert=alerts['items'][0]
+        self.assertEqual(alert['severity'],'warning')
+        self.assertIn('Mindestbestand 3',alert['message'])
+        status,again=self.req('/api/engine/evaluate','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(again['result']['open_alerts'],1)
+        status,ack=self.req(f"/api/engine/alerts/{alert['id']}/acknowledge",'POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(ack['item']['status'],'acknowledged')
+        status,receipt=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':2,'idempotency_key':'policy-test-receipt'})
+        self.assertEqual(status,201)
+        status,resolved=self.req('/api/engine/evaluate','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(resolved['result']['alerts_resolved'],1)
+        status,items=self.req('/api/engine/alerts?status=resolved')
+        self.assertEqual(status,200)
+        self.assertEqual(items['count'],1)
+        status,status_data=self.req('/api/engine/status')
+        self.assertEqual(status,200)
+        self.assertEqual(status_data['counts']['open_alerts'],0)
+
     def test_resource_ledger_migrates_existing_stock_without_inventing_history(self):
         _,created=self.req('/api/resources','POST',{'name':'Bestandsmigration','quantity':7,'unit':'Kisten'})
         resource_id=created['item']['id']
