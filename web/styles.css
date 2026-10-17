@@ -392,3 +392,6 @@ hr,.side-rule{border-color:#3b2833;background:#3b2833}
 .ai-privacy-note{margin:.8rem 0 0}
 #aiGenerateButton:disabled{opacity:.45;cursor:not-allowed;filter:saturate(.4)}
 @media(max-width:720px){.ai-state{max-width:130px}.ai-provider-details{grid-template-columns:1fr;gap:.2rem}.ai-provider-details strong{margin-bottom:.35rem}}
+
+.ai-memory-note{margin:.65rem 0;padding:.65rem .8rem;border:1px solid var(--line);border-left:2px solid var(--gold);background:rgba(0,0,0,.16);color:var(--muted);font-size:.78rem;overflow-wrap:anywhere}
+.ai-memory-note.warning{border-color:rgba(225,38,62,.55);border-left-color:var(--red);color:#f0b8bb;background:rgba(225,38,62,.07)}
