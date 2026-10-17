@@ -30,12 +30,15 @@ CONFIG_FILE="$CONFIG_FILE" MODEL_PATH="$MODEL_PATH" "$AI_VENV/bin/python" - <<'P
 import json, os
 from pathlib import Path
 dest=Path(os.environ['CONFIG_FILE'])
-payload={
-    'enabled': True,
-    'model_path': os.environ['MODEL_PATH'],
-    'context_size': 4096,
-    'max_tokens': 512,
-}
+try:
+    payload=json.loads(dest.read_text(encoding='utf-8')) if dest.is_file() else {}
+    if not isinstance(payload,dict):
+        payload={}
+except (OSError,UnicodeError,ValueError):
+    payload={}
+payload.update({'enabled':True,'model_path':os.environ['MODEL_PATH']})
+payload.setdefault('context_size',4096)
+payload.setdefault('max_tokens',512)
 temporary=dest.with_suffix('.json.partial')
 temporary.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 temporary.chmod(0o600)
