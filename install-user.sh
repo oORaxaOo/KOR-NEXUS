@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 command -v python3 >/dev/null 2>&1 || { echo 'Python 3 fehlt. Bitte Python 3 installieren.' >&2; exit 1; }
-[[ -s "$ROOT/core/server.py" && -s "$ROOT/core/engine.py" && -s "$ROOT/core/ai_provider.py" && -s "$ROOT/web/index.html" && -s "$ROOT/web/app.js" && -s "$ROOT/web/geodata/world.geojson" ]] || { echo 'Installationsdateien fehlen; bitte das vollständige Archiv entpacken.' >&2; exit 1; }
+[[ -s "$ROOT/core/server.py" && -s "$ROOT/core/engine.py" && -s "$ROOT/core/ai_provider.py" && -s "$ROOT/web/index.html" && -s "$ROOT/web/app.js" && -s "$ROOT/web/geodata/world.geojson" && -s "$ROOT/scripts/setup-local-ai.sh" ]] || { echo 'Installationsdateien fehlen; bitte das vollständige Archiv entpacken.' >&2; exit 1; }
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 APP_DIR="$DATA_HOME/kor-workstation-app"
 RUNTIME_DIR="$DATA_HOME/kor-workstation"
