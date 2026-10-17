@@ -34,6 +34,57 @@ class CoreApiTests(unittest.TestCase):
         try:
             with urlopen(req,timeout=5) as res:return res.status,json.loads(res.read().decode())
         except HTTPError as e:return e.code,json.loads(e.read().decode())
+    def test_event_journal_tracks_changes_and_replays_by_cursor(self):
+        _,initial=self.req('/api/events')
+        cursor=initial['latest_event_id']
+        status,created=self.req('/api/tasks','POST',{'title':'Journal-Test'})
+        self.assertEqual(status,201)
+        task_id=created['item']['id']
+        self.assertEqual(self.req('/api/tasks/'+str(task_id),'PATCH',{'done':True})[0],200)
+        self.assertEqual(self.req('/api/tasks/'+str(task_id),'DELETE')[0],200)
+        status,batch=self.req('/api/events?since='+str(cursor)+'&limit=100')
+        self.assertEqual(status,200)
+        self.assertFalse(batch['reset_required'])
+        changes=[event for event in batch['events'] if event['entity_type']=='task' and event['entity_id']==str(task_id)]
+        self.assertEqual([event['event_type'] for event in changes],['created','updated','deleted'])
+        self.assertTrue(all(event['payload']=={'id':task_id} for event in changes))
+        self.assertEqual([event['event_id'] for event in changes],sorted(event['event_id'] for event in changes))
+        status,first=self.req('/api/events?since='+str(cursor)+'&limit=1')
+        self.assertEqual(status,200)
+        self.assertEqual(len(first['events']),1)
+        status,next_page=self.req('/api/events?since='+str(first['events'][0]['event_id'])+'&limit=1')
+        self.assertEqual(status,200)
+        self.assertEqual(len(next_page['events']),1)
+        with app.db_connect() as con:
+            self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=6').fetchone())
+
+    def test_event_journal_reports_replay_gap(self):
+        self.req('/api/tasks','POST',{'title':'Journal-Gap-1'})
+        self.req('/api/tasks','POST',{'title':'Journal-Gap-2'})
+        with app.db_connect() as con:
+            first=con.execute('SELECT MIN(event_id) AS id FROM event_journal').fetchone()['id']
+            con.execute('DELETE FROM event_journal WHERE event_id=?',(first,))
+        status,batch=self.req('/api/events?since=0')
+        self.assertEqual(status,200)
+        self.assertTrue(batch['reset_required'])
+        self.assertEqual(batch['cursor'],batch['latest_event_id'])
+        self.assertEqual(batch['events'],[])
+
+    def test_restore_from_pre_journal_backup_reinstalls_additive_schema(self):
+        with app.db_connect() as con:
+            con.execute('DROP TABLE event_journal')
+            con.execute('DELETE FROM schema_migrations WHERE version=6')
+        legacy=app.create_backup('legacy-journal-test')
+        status,result=self.req('/api/restore','POST',{'name':legacy['name']})
+        self.assertEqual(status,200,result)
+        status,batch=self.req('/api/events')
+        self.assertEqual(status,200)
+        self.assertFalse(batch['reset_required'])
+        with app.db_connect() as con:
+            self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=6').fetchone())
+            self.assertIsNotNone(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_journal'").fetchone())
+
+
     def test_active_instance_requires_matching_user_data_directory(self):
         health={'ok':True,'app':'KOR-NEXUS','version':'1.20.0','data_dir':str(app.DATA_HOME)}
         with patch('core.server.urllib.request.urlopen',return_value=FakeResponse(json.dumps(health).encode('utf-8'))):
