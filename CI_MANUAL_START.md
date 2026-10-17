@@ -1,63 +1,50 @@
-# KOR-NEXUS — CI-Status und Betriebshinweise
+# KOR-NEXUS 1.20.0 — CI-Startanleitung
 
-Stand: 2026-10-16 · Version 1.20.0
+Status: **Änderungen auf einem separaten GitHub-Branch vorbereitet; der PR-CI-Lauf muss die neue Pipeline noch bestätigen.** Es wird kein grüner Status vorweggenommen.
 
-## Repository
+## Pipeline-Aufbau
 
-- Repository: [`oORaxaOo/KOR-NEXUS`](https://github.com/oORaxaOo/KOR-NEXUS)
-- Arbeitsbranch: [`transfer/kor-nexus-1.20.0`](https://github.com/oORaxaOo/KOR-NEXUS/tree/transfer/kor-nexus-1.20.0)
-- Release-Workflow: [`.github/workflows/release.yml`](https://github.com/oORaxaOo/KOR-NEXUS/blob/transfer/kor-nexus-1.20.0/.github/workflows/release.yml)
-- Aktuelle Ergebnisse: [GitHub Actions für den Transfer-Branch](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0)
+Die Workflow-Datei `.github/workflows/release.yml` definiert drei getrennte Jobs:
 
-Die Bereinigung und Wiederherstellung wurde im Transfer-Branch ausgeführt. `main` wurde von diesen Transfer-Commits nicht direkt verändert. Ursprüngliche Upload-Archive bleiben unter `archive/legacy-uploads/` erhalten.
+1. **Portable quality gates** (Ubuntu): Python 3.12 und Node.js 22; `bash scripts/ci.sh quick`; Backend-Unit-Tests; Prüfsummen, Integrität und erforderliche Einträge des reproduzierbaren Quellarchivs; Quellartefakte werden nur nach erfolgreichem Job hochgeladen.
+2. **Browser QA and user installation integration test** (Ubuntu): installiert Playwright/Chromium und führt Browser-QA sowie den isolierten Benutzer-Installationstest separat mit jeweils 120 Sekunden Prozesslimit aus. Der Job besitzt zusätzlich ein Gesamtlimit von 15 Minuten.
+3. **Native Arch Linux package build and isolated install test** (Arch-Linux-Container): baut als unprivilegierter Benutzer, prüft Paketmetadaten und Paketdateiliste und testet die Installation nur innerhalb des wegwerfbaren Containers. Gesamtlimit: 35 Minuten.
 
-## Pipeline
-
-Die Release-Pipeline besteht aus zwei Jobs:
-
-1. **Portable quality gates:** installiert Python 3.12, Node.js und Playwright/Chromium; führt `bash scripts/ci.sh full` aus und lädt Quellarchiv, Prüfsummen und PKGBUILD erst nach erfolgreichem Gate als CI-Artefakt hoch.
-2. **Native Arch Linux package build:** baut das Paket in einem kurzlebigen Arch-Linux-Container, prüft Metadaten und Paketdateiliste, installiert es ausschließlich in diesem wegwerfbaren Container, testet Start/Health/Einzelinstanz/Stop und prüft den Erhalt der Nutzerdaten nach Entfernung.
-
-Der Workflow besitzt auf Workflow-Ebene `contents: read`. Er erstellt keine GitHub-Releases, veröffentlicht keine Tags und pusht keine Änderungen aus den Jobs. Der Arch-Paketbau wird als unprivilegierter Benutzer ausgeführt; der Paket-Integrationstest läuft als Root nur innerhalb des isolierten Arch-CI-Containers.
-
-## Bereits bestätigte Prüfungen
-
-- 29/29 Kern-API-Unit-Tests bestanden.
-- `bash scripts/ci.sh quick` bestanden; Versionskonsistenz, JavaScript-/Python-Syntax, Paketdateiliste und reproduzierbares Quellarchiv wurden geprüft.
-- Der isolierte Benutzer-Installationstest bestand mit Pfaden, die Leerzeichen enthalten, einem absichtlich belegten Standard-Port, Health-Check, Doppelstart, Stop und Deinstallation bei erhaltenen Nutzerdaten.
-- Die Offline-Weltkarte wurde mit 177 Features, 364.876 Byte und SHA-256-Prüfsumme validiert.
-- Der native Arch-Paketbau und sein isolierter Installationstest bestanden in [diesem Actions-Lauf](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/38965584870).
-
-Der neueste Workflow-Lauf bleibt für den finalen Release-Status maßgeblich; ein erfolgreiches früheres Teilresultat darf nicht als grünes Ergebnis eines neueren vollständigen Laufs dargestellt werden. Siehe die oben verlinkte Liste der Actions-Läufe.
+Alle Jobs erhalten nur `contents: read`. GitHub-Actions wird mit auf konkrete Commit-SHAs fixierten Actions ausgeführt. Der Workflow erstellt keine Releases oder Tags und führt keine Deployments aus. Es werden keine Secrets benötigt.
 
 ## Lokale Prüfungen
 
 Im Projektstamm:
 
 ```bash
+bash -n scripts/ci.sh scripts/release-check.sh scripts/test-installation.sh scripts/test-built-package-installation.sh
+python3 -m py_compile core/server.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py scripts/verify-built-package.py
+node --check web/app.js
 python3 -m unittest -v core.test_server
 bash scripts/ci.sh quick
+python3 scripts/qa-preview-playwright.py
 bash scripts/test-installation.sh
 ```
 
-Für den vollständigen portablen Release-Gate werden Playwright und Chromium benötigt:
-
-```bash
-bash scripts/ci.sh full
-```
-
-Ein nativer Paketbau benötigt eine Arch-Linux-Umgebung mit `makepkg` und `pacman`:
+Die Browserprüfung setzt Playwright und Chromium voraus. Der native Paketbau erfordert eine Arch-Linux-Umgebung mit `pacman` und `makepkg`:
 
 ```bash
 bash scripts/build-arch-package.sh
 ```
 
-Das Skript baut standardmäßig, ohne das Paket auf dem Host zu installieren. Die ausdrücklich optionale Variante `bash scripts/build-arch-package.sh --install` ist für ein bewusst gewähltes persönliches Zielsystem gedacht und wird nicht von der CI-Pipeline verwendet.
+Der Befehl baut standardmäßig ein Paket, installiert es nicht auf dem persönlichen Host. Der CI-Installationstest läuft nur innerhalb eines wegwerfbaren Arch-Containers.
 
-## Vorschaubilder
+## Zeitlimits und Archivprüfung
 
-Die Dateien `preview/*.png` sind historische visuelle Referenzen aus den zuvor hochgeladenen Archiven und keine aktuellen Prüfergebnisse. Neue Desktop-/Mobil-Screenshots mit Playwright und Chromium erzeugen:
+Für `scripts/release-check.sh full` gelten folgende konfigurierbare Prozesslimits:
 
-```bash
-python3 scripts/qa-preview-playwright.py
-```
+- `KOR_BROWSER_QA_TIMEOUT` — Standard: 120 Sekunden.
+- `KOR_INSTALL_TEST_TIMEOUT` — Standard: 120 Sekunden.
+
+Die Archivprüfung verwendet `removeprefix('./')`, damit gültige Einträge wie `.github/workflows/release.yml` nicht fälschlich verändert werden. Ein Zeitlimit begrenzt Hänger, behebt aber nicht automatisch deren Ursache.
+
+## Remote-Status und Sicherheitsgrenzen
+
+Die Änderung liegt in einem separaten Branch und soll per Pull Request geprüft werden. Der Workflow wird durch den PR ausgelöst; es wurde kein manueller Workflow-Dispatch ausgelöst. **Ergebnisse gelten erst dann als bestätigt, wenn der zu diesem Branch gehörende Actions-Lauf abgeschlossen ist.**
+
+Keine Zugangsdaten oder Secrets wurden hinzugefügt. Die Pipeline besitzt keine Schreibberechtigungen auf das Repository. Es erfolgen keine automatische Veröffentlichung und kein automatisches Zusammenführen.
