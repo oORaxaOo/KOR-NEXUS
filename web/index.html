@@ -109,6 +109,18 @@
     <p class="subtitle">Bestandswarnungen, freigegebene Routinen und geplante Jobs. Kritische Bestandsänderungen werden niemals automatisch ausgeführt: erst bestätigen, dann separat ausführen.</p>
     <div id="engineMetrics" class="dashboard-metrics" aria-live="polite"><div class="dashboard-metric"><span>ENGINE</span><strong>—</strong></div></div>
     <div class="engine-toolbar"><button id="engineEvaluate" class="btn" type="button">↻ ENGINE AUSWERTEN</button><button id="automationRun" class="btn ghost" type="button">AUTOMATIONEN AUSFÜHREN</button><button id="runDueJobs" class="btn ghost" type="button">FÄLLIGE JOBS AUSFÜHREN</button></div>
+    <section class="ops-card ai-advisor-card" aria-labelledby="aiAdvisorHeading">
+     <div class="panel-head compact"><div><div class="kicker">05 / OPTIONALER LOKALER ASSISTENT</div><h3 id="aiAdvisorHeading">KI-Beratung</h3></div><span id="aiProviderBadge" class="region-label ai-state">STATUS WIRD GELADEN</span></div>
+     <p id="aiProviderMessage" class="subtitle">Die Kern-Engine funktioniert vollständig ohne KI. Ein lokal installiertes GGUF-Modell kann optional beratende Antworten liefern; die KI verändert niemals direkt deine Daten.</p>
+     <div class="ai-provider-details"><span>PROVIDER</span><strong id="aiProviderName">—</strong><span>MODELL</span><strong id="aiModelName">nicht geladen</strong></div>
+     <form id="aiAdvisorForm" class="entry-form">
+      <label for="aiPrompt" class="field-label">FRAGE / AUFTRAG AN DEN LOKALEN ASSISTENTEN</label>
+      <textarea id="aiPrompt" class="input" rows="3" maxlength="12000" required placeholder="Bitte erkläre, vergleiche oder entwirf einen Vorschlag …"></textarea>
+      <div class="engine-toolbar"><button id="aiGenerateButton" class="btn" type="submit" disabled>KI-ANTWORT ERSTELLEN</button><button id="aiRefreshStatus" class="btn ghost" type="button">STATUS PRÜFEN</button></div>
+     </form>
+     <pre id="aiResponse" class="ai-response" aria-live="polite" hidden></pre>
+     <p class="ai-privacy-note">LOKAL · KEIN CLOUD-API-DIENST · KEINE AUTOMATISCHE AKTION · MODELLDOWNLOAD NUR MANUELL</p>
+    </section>
     <div class="engine-grid">
      <section class="ops-card"><div class="panel-head compact"><div><div class="kicker">01 / MONITORING</div><h3>Alerts</h3></div><span class="region-label">LIVE</span></div><div id="engineAlerts" class="ops-list"><div class="empty">Alerts werden geladen…</div></div></section>
      <section class="ops-card"><div class="panel-head compact"><div><div class="kicker">02 / POLICY ENGINE</div><h3>Automationsregeln</h3></div><span id="automationRuleCount" class="region-label">00</span></div>
