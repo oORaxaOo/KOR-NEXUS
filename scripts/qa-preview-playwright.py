@@ -103,6 +103,14 @@ with sync_playwright() as p:
   page.locator('#workbenchTasks .task-row').filter(has_text='QA-Werkbankaufgabe').wait_for(timeout=8000);assert page.locator('#workbenchMetrics .dashboard-metric').count()==5
   page.locator('#workbenchTasks [data-workbench-done]').click();page.wait_for_function("!document.querySelector('#workbenchTasks').innerText.includes('QA-Werkbankaufgabe')")
   page.once('dialog',lambda dialog: dialog.accept());page.locator('#workbenchNotes [data-workbench-delete]').click();page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===0")
+  assert page.locator('#steamAppLaunchForm').count()==1
+  assert page.locator('#steamAppLaunchForm').locator('button[type=submit]').count()==1
+  assert page.locator('a[href="steam://open/games"]').count()==1
+  assert page.locator('a[href="steam://open/library"]').count()==1
+  assert page.locator('#steamAppId').evaluate("(el)=>el.checkValidity()") is False
+  page.locator('#steamAppId').fill('620');assert page.locator('#steamAppId').evaluate("(el)=>el.checkValidity()") is True
+  page.locator('#steamAppId').fill('invalid');assert page.locator('#steamAppId').evaluate("(el)=>el.checkValidity()") is False
+  print('PASS: Steam-Bridge zeigt Bibliothekslinks und validiert App-IDs ohne ungefragten externen Start')
   page.locator('#workbenchView [data-workbench-open=archive]').click();page.wait_for_function("document.querySelector('#moduleTitle').textContent==='Archiv'")
   print('PASS: Werkbanknotizen speichern/suchen, Kennzahlen laden, Aufgaben anlegen/abschließen und Modul-Schnellzugriff')
 
