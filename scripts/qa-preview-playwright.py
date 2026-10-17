@@ -24,7 +24,7 @@ mock=r'''<script>
 const __state={stateGeo:null,tasks:[],records:[{id:900,module:'projects',title:'QA-existing-persisted-project',body:'Loaded from the mock database',region:'SYSTEM',tags:['persisted'],created_at:new Date().toISOString(),updated_at:new Date().toISOString()}],settings:{language:'de',backup_keep:'12',backup_interval_minutes:'30',last_news_refresh:''},backups:[],news:[],sources:[],nextTask:1,nextRecord:1,nextBackup:1,units:[],resources:[],assignments:[],nextUnit:1,nextResource:1,nextAssignment:1,locations:[],nextLocation:1,engineRules:[],alerts:[],proposals:[],jobs:[],nextRule:1,nextProposal:1,nextJob:1};
 window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;window.__qaRequests=[];
 window.fetch=async (input,init={})=>{
- const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();window.__qaRequests.push({url:String(input),path,search:u.search,method});let body={};try{body=init.body?JSON.parse(init.body):{}}catch{}
+ const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();window.__qaRequests.push({url:String(input),path,search:u.search,method});let body={},m;try{body=init.body?JSON.parse(init.body):{}}catch{}
  const now=()=>new Date().toISOString();
  const res=(data,status=200)=>Promise.resolve(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}));
  const rec=(r)=>({...r});
@@ -50,7 +50,7 @@ window.fetch=async (input,init={})=>{
  if(path==='/settings'&&method==='PATCH'){Object.assign(__state.settings,Object.fromEntries(Object.entries(body).map(([k,v])=>[k,String(v)])));return res({settings:{...__state.settings}})}
  if(path==='/tasks'&&method==='GET')return res({items:__state.tasks.slice()});
  if(path==='/tasks'&&method==='POST'){const item={id:__state.nextTask++,title:body.title,area:body.area||'SYSTEM',done:false,created_at:now(),updated_at:now()};__state.tasks.push(item);return res({item},201)}
- let m=path.match(/^\/tasks\/(\d+)$/);if(m&&method==='PATCH'){const item=__state.tasks.find(x=>x.id===+m[1]);if(!item)return res({error:'Aufgabe nicht gefunden'},404);Object.assign(item,body,{updated_at:now()});return res({item})}if(m&&method==='DELETE'){__state.tasks=__state.tasks.filter(x=>x.id!==+m[1]);return res({ok:true})}
+ m=path.match(/^\/tasks\/(\d+)$/);if(m&&method==='PATCH'){const item=__state.tasks.find(x=>x.id===+m[1]);if(!item)return res({error:'Aufgabe nicht gefunden'},404);Object.assign(item,body,{updated_at:now()});return res({item})}if(m&&method==='DELETE'){__state.tasks=__state.tasks.filter(x=>x.id!==+m[1]);return res({ok:true})}
  if(path==='/records'&&method==='GET'){const module=u.searchParams.get('module');return res({items:__state.records.filter(r=>r.module===module).sort((a,b)=>b.id-a.id).map(rec)})}
  if(path==='/locations'&&method==='GET')return res({items:__state.locations.map(x=>({...x,project_title:__state.records.find(r=>r.id===x.project_id)?.title||null})),projection:'mercator-marker-overlay',offline:true});
  if(path==='/locations'&&method==='POST'){const item={id:__state.nextLocation++,...body,created_at:now(),updated_at:now()};__state.locations.push(item);return res({item},201)}
