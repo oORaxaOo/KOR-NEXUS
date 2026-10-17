@@ -253,10 +253,28 @@ function startLiveUpdates(){
 async function reloadAll(){const jobs=[loadTasks(),loadSettings(),loadBackups()];if(active==='atlas')jobs.push(renderAtlasRecords());else if(active!=='news')jobs.push(loadRecords(active));await Promise.all(jobs);}
 async function migrateLegacy(){try{if(localStorage.getItem('kor-workstation.migrated-v1'))return;const oldTasks=JSON.parse(localStorage.getItem('kor-workstation.tasks')||'null');const oldRecords=JSON.parse(localStorage.getItem('kor-workstation.records')||'null');if(!oldTasks&&!oldRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const currentTasks=(await api('/tasks')).items;let currentRecords=0;for(const m of ['atlas','projects','archive','simulation','database'])currentRecords+=(await api('/records?module='+m)).items.length;if(currentTasks.length||currentRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const data={schema_version:1,tasks:Array.isArray(oldTasks)?oldTasks:[],records:[]};if(oldRecords&&typeof oldRecords==='object')for(const [module,items] of Object.entries(oldRecords))if(['atlas','projects','archive','simulation','database'].includes(module)&&Array.isArray(items))for(const r of items)data.records.push({...r,module});await api('/import',{method:'POST',body:JSON.stringify({data})});localStorage.setItem('kor-workstation.migrated-v1','1');notify(lang==='de'?'Vorhandene Browserdaten in SQLite übernommen.':'Legacy browser data moved to SQLite.');}catch(e){console.warn('Legacy migration skipped:',e);}}
 let operationUnits=[],operationResources=[],operationProjects=[],operationAssignments=[];
+async function loadAIStatus(){
+ const badge=$('#aiProviderBadge'),button=$('#aiGenerateButton');
+ try{
+  const status=await api('/ai/status');
+  badge.textContent=status.available?(lang==='de'?'LOKAL BEREIT':'LOCAL READY'):(status.enabled?(lang==='de'?'KONFIGURATION FEHLT':'CONFIGURATION NEEDED'):(lang==='de'?'DEAKTIVIERT':'DISABLED'));
+  badge.className='region-label ai-state '+(status.available?'ready':status.enabled?'error':'disabled');
+  $('#aiProviderName').textContent=status.provider||'unbekannt';
+  $('#aiModelName').textContent=status.model_name||(status.model_loaded?(lang==='de'?'Modell geladen':'Model loaded'):(lang==='de'?'kein Modell geladen':'no model loaded'));
+  $('#aiProviderMessage').textContent=status.reason||(lang==='de'?'Die KI ist optional und hat keinen direkten Schreibzugriff auf deine Daten.':'AI is optional and has no direct write access to your data.');
+  button.disabled=!status.available;
+  return status;
+ }catch(error){
+  badge.textContent=lang==='de'?'STATUS NICHT VERFÜGBAR':'STATUS UNAVAILABLE';badge.className='region-label ai-state error';
+  $('#aiProviderName').textContent='—';$('#aiModelName').textContent='—';$('#aiProviderMessage').textContent=error.message;
+  button.disabled=true;return null;
+ }
+}
 async function loadEngine(){
  const [status,alerts,rules,proposals,jobs]=await Promise.all([
   api('/engine/status'),api('/engine/alerts?status=all'),api('/automation/rules'),api('/actions/proposals?status=all'),api('/engine/jobs?status=all')
  ]);
+ await loadAIStatus();
  const c=status.counts||{};
  $('#engineMetrics').innerHTML=[
   ['OFFENE ALERTS',c.open_alerts??0],['AKTIVE REGELN',c.enabled_automation_rules??0],['OFFENE FREIGABEN',c.pending_action_proposals??0],['GEPLANTE JOBS',c.pending_scheduled_jobs??0]
@@ -281,6 +299,16 @@ function updateAutomationFields(){
  if(adjust)$('#automationTrigger').value='resource_low_stock';
 }
 function wireEngine(){
+ $('#aiRefreshStatus').addEventListener('click',()=>loadAIStatus());
+ $('#aiAdvisorForm').addEventListener('submit',async e=>{
+  e.preventDefault();const prompt=$('#aiPrompt').value.trim();if(!prompt)return;
+  const button=$('#aiGenerateButton'),output=$('#aiResponse');button.disabled=true;output.hidden=false;output.textContent=lang==='de'?'Lokale KI arbeitet…':'Local AI is generating…';
+  try{
+   const result=await api('/ai/generate',{method:'POST',body:JSON.stringify({prompt,context:{active_module:active,selected_region:selectedRegion}})});
+   output.textContent=result.response;
+  }catch(error){output.textContent=(lang==='de'?'KI-Anfrage fehlgeschlagen: ':'AI request failed: ')+error.message;}
+  finally{const status=await loadAIStatus();button.disabled=!status?.available;}
+ });
  $('#engineEvaluate').addEventListener('click',async()=>{try{await api('/engine/evaluate',{method:'POST',body:'{}'});await loadEngine();notify('Engine-Auswertung abgeschlossen.')}catch(e){notify(e.message,'error')}});
  $('#automationRun').addEventListener('click',async()=>{try{const result=await api('/automation/run',{method:'POST',body:'{}'});await loadEngine();notify('Automationen geprüft: '+(result.result.actions_executed||0)+' Routineaktion(en), '+(result.result.proposals_created||0)+' Vorschlag/Vorschläge.')}catch(e){notify(e.message,'error')}});
  $('#runDueJobs').addEventListener('click',async()=>{try{const result=await api('/engine/jobs/run-due',{method:'POST',body:'{}'});await loadEngine();notify('Fällige Jobs verarbeitet: '+result.result.processed+'.')}catch(e){notify(e.message,'error')}});
