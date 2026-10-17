@@ -301,6 +301,30 @@ class CoreApiTests(unittest.TestCase):
         self.assertTrue(ahead['reset_required'])
         self.assertEqual(ahead['cursor'],ahead['latest_event_id'])
 
+    def test_event_journal_retention_is_bounded_and_configurable(self):
+        status,settings=self.req('/api/settings')
+        self.assertEqual(status,200)
+        self.assertEqual(settings['settings']['event_retention_count'],'100000')
+        status,updated=self.req('/api/settings','PATCH',{'event_retention_count':'1000'})
+        self.assertEqual(status,200)
+        self.assertEqual(updated['settings']['event_retention_count'],'1000')
+        with app.db_connect() as con:
+            for i in range(1005):
+                con.execute("""INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
+                    VALUES(?,?,'test',?,'created','{}',1)""",(f'retention-test-{i}',app.utcnow(),str(i)))
+            count=con.execute('SELECT COUNT(*) AS n FROM event_journal').fetchone()['n']
+            bounds=con.execute('SELECT MIN(event_id) AS first,MAX(event_id) AS last FROM event_journal').fetchone()
+            self.assertLessEqual(count,1000)
+            self.assertEqual(bounds['last']-bounds['first']+1,count)
+            batch=app.read_event_batch(con,0)
+            self.assertTrue(batch['reset_required'])
+            self.assertEqual(batch['cursor'],batch['latest_event_id'])
+
+    def test_event_retention_setting_is_range_validated(self):
+        self.assertEqual(self.req('/api/settings','PATCH',{'event_retention_count':'10'})[0],200)
+        self.assertEqual(self.req('/api/settings','PATCH',{'event_retention_count':'10'})[1]['settings']['event_retention_count'],'1000')
+        self.assertEqual(self.req('/api/settings','PATCH',{'event_retention_count':'not-a-number'})[0],400)
+
     def test_restore_from_pre_journal_backup_reinstalls_additive_schema(self):
         with app.db_connect() as con:
             # Simulate a genuine pre-journal database, not a table dropped beneath live triggers.
