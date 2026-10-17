@@ -27,6 +27,39 @@ Für eine benutzerspezifische Installation mit Anwendungsmenü:
 
 Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
 
+## Optionale lokale KI (llama.cpp)
+
+Die deterministische Kern-Engine benötigt keine KI. Der lokale KI-Assistent ist standardmäßig deaktiviert und kann nach erfolgreicher Stabilisierung des Kerns ausdrücklich aktiviert werden. Er liefert Beratungstexte, erhält keinen direkten Datenbank-Schreibzugriff und führt keine Aktionen aus. Prompts werden nicht an einen Cloud-Anbieter gesendet.
+
+Für die optionale Laufzeit wird `llama-cpp-python` in einer eigenen virtuellen Umgebung unter `$XDG_DATA_HOME/kor-workstation/ai-venv` installiert. Die Einrichtung lädt **kein Modell** herunter: Du musst zuvor selbst eine GGUF-Datei beziehen und deren Lizenz prüfen.
+
+Aus dem Quellordner:
+
+```bash
+bash scripts/setup-local-ai.sh
+```
+
+Bei einer Benutzerinstallation:
+
+```bash
+bash "$HOME/.local/share/kor-workstation-app/scripts/setup-local-ai.sh"
+```
+
+Das Skript fragt nach dem Pfad zur vorhandenen `.gguf`-Datei, installiert die optionale Bindung isoliert und legt die Konfiguration mit privaten Dateirechten unter `$XDG_CONFIG_HOME/kor-nexus/ai.json` (Standard: `~/.config/kor-nexus/ai.json`) ab. Danach KOR-NEXUS neu starten. Der Launcher erkennt die virtuelle Umgebung automatisch; ohne sie bleibt der Standardstart unverändert.
+
+Die Konfiguration kann beispielsweise so aussehen:
+
+```json
+{
+  "enabled": true,
+  "model_path": "/absoluter/pfad/zum/modell.gguf",
+  "context_size": 4096,
+  "max_tokens": 512
+}
+```
+
+Die Laufzeit lädt das Modell erst bei der ersten Anfrage. Kontextfenster und Antwortlänge sind begrenzt. Ein fehlendes Paket, ein ungültiger Modellpfad oder ein Ladefehler deaktiviert nicht die Kern-Engine. Es gibt keinen automatischen Modell-Download und keinen verpflichtenden Netzwerkdienst. Die Installation von `llama-cpp-python` kann abhängig von Plattform und Hardware Zeit benötigen und benötigt beim Setup Internetzugriff, sofern kein passendes Paket lokal verfügbar ist.
+
 ## Historische technische Änderungen
 
 ## Entwicklungsstand 1.11.0 — Live-RSS und Quellenprüfung
