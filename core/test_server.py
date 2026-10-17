@@ -113,6 +113,18 @@ class CoreApiTests(unittest.TestCase):
             provider.close()
             self.assertFalse(provider.status()['model_loaded'])
 
+    def test_llama_cpp_status_warns_when_model_file_exceeds_available_ram(self):
+        from core.ai_provider import LlamaCppProvider
+        with tempfile.TemporaryDirectory() as directory:
+            model_path=Path(directory)/'large.gguf';model_path.write_bytes(b'x'*128)
+            provider=LlamaCppProvider(model_path=model_path,enabled=True,llama_factory=lambda **kwargs: object())
+            with patch('core.ai_provider.available_memory_bytes',return_value=64):
+                status=provider.status()
+            self.assertEqual(status['model_size_bytes'],128)
+            self.assertEqual(status['available_memory_bytes'],64)
+            self.assertTrue(status['memory_warning'])
+            self.assertIn('RAM',status['reason'])
+
     def test_local_ai_provider_reads_explicit_user_config_without_enabling_by_default(self):
         import os
         from core.ai_provider import DisabledAIProvider, LlamaCppProvider, configured_ai_provider
