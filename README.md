@@ -7,7 +7,8 @@
 - **Kanonischer Quellbaum:** Die versionierten Projektdateien im Repository. Ursprüngliche Upload-Archive bleiben unter `archive/legacy-uploads/` als Herkunfts- und Wiederherstellungsreferenz erhalten; sie sind nicht die aktive Quelle.
 - **Arbeitsbranch:** `transfer/kor-nexus-1.20.0`. Die vollständige Wiederherstellung ist bereits auch in `main` angekommen. Dieser Branch dient für weitere Änderungen und Verifikation; Änderungen werden hier zuerst geprüft und erst nach Review zusammengeführt.
 - **Release-Prüfungen:** `.github/workflows/release.yml` führt portable Qualitätsprüfungen, Browser-Tests und einen nativen Arch-Linux-Paketbau mit isoliertem Installationstest aus. Der Workflow lädt Artefakte hoch, erzeugt aber nicht automatisch GitHub-Releases oder Tags.
-- **Bereits erfolgreich geprüfte Gates:** 29 Kern-API-Tests, `bash scripts/ci.sh quick`, der isolierte Benutzer-Installationstest (inklusive Pfaden mit Leerzeichen, belegtem Standard-Port, Doppelstart, Stop und Datenerhalt bei Deinstallation) sowie die Offline-Weltkarte mit 177 GeoJSON-Features und verifizierter Prüfsumme.
+- **Letzter grüner Gesamt-Gate:** 52 API-Tests, Browser-Smoke-Test inklusive KI-Panel, nativer Arch-Paketbau und isolierter Paketinstallation für Commit `41637a3` ([GitHub Actions](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39034401643)). Die echten Modell-/Hardwaretests der optionalen KI sind noch offen.
+- **Historische Baseline:** Der isolierte Benutzer-Installationstest prüft weiterhin Pfade mit Leerzeichen, belegten Standard-Port, Doppelstart, Stop und Datenerhalt bei Deinstallation; die Offline-Weltkarte enthält 177 GeoJSON-Features mit verifizierter Prüfsumme.
 - **Aktueller Gesamtstatus:** Für den endgültigen Release-Status ist der neueste [GitHub-Actions-Lauf dieses Branches](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0) maßgeblich; ein älterer grüner Job ersetzt nicht das Ergebnis des neuesten Commits.
 - **Vorschaubilder:** Die Dateien unter `preview/` sind ausdrücklich als archivierte visuelle Referenzen gekennzeichnet, nicht als aktuelle QA-Screenshots. Neue Screenshots lassen sich mit `python3 scripts/qa-preview-playwright.py` und installiertem Playwright/Chromium erzeugen.
 
@@ -26,6 +27,39 @@ Für eine benutzerspezifische Installation mit Anwendungsmenü:
 ```
 
 Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
+
+## Optionale lokale KI (llama.cpp)
+
+Die deterministische Kern-Engine benötigt keine KI. Der lokale KI-Assistent ist standardmäßig deaktiviert und kann nach erfolgreicher Stabilisierung des Kerns ausdrücklich aktiviert werden. Er liefert Beratungstexte, erhält keinen direkten Datenbank-Schreibzugriff und führt keine Aktionen aus. Prompts werden nicht an einen Cloud-Anbieter gesendet.
+
+Für die optionale Laufzeit wird `llama-cpp-python` in einer eigenen virtuellen Umgebung unter `$XDG_DATA_HOME/kor-workstation/ai-venv` installiert. Die Einrichtung lädt **kein Modell** herunter: Du musst zuvor selbst eine GGUF-Datei beziehen und deren Lizenz prüfen.
+
+Aus dem Quellordner:
+
+```bash
+bash scripts/setup-local-ai.sh
+```
+
+Bei einer Benutzerinstallation:
+
+```bash
+bash "${XDG_DATA_HOME:-$HOME/.local/share}/kor-workstation-app/scripts/setup-local-ai.sh"
+```
+
+Das Skript fragt nach dem Pfad zur vorhandenen `.gguf`-Datei, installiert die optionale Bindung isoliert und legt die Konfiguration mit privaten Dateirechten unter `$XDG_CONFIG_HOME/kor-nexus/ai.json` (Standard: `~/.config/kor-nexus/ai.json`) ab. Danach KOR-NEXUS neu starten. Der Launcher erkennt die virtuelle Umgebung automatisch; ohne sie bleibt der Standardstart unverändert.
+
+Die Konfiguration kann beispielsweise so aussehen:
+
+```json
+{
+  "enabled": true,
+  "model_path": "/absoluter/pfad/zum/modell.gguf",
+  "context_size": 4096,
+  "max_tokens": 512
+}
+```
+
+Die Laufzeit lädt das Modell erst bei der ersten Anfrage. Kontextfenster und Antwortlänge sind begrenzt. Die Oberfläche vergleicht die GGUF-Dateigröße grob mit dem aktuell verfügbaren RAM und warnt, wenn die Datei größer ist; KV-Cache und Backend benötigen zusätzlichen Speicher. Ein fehlendes Paket, ein ungültiger Modellpfad oder ein Ladefehler deaktiviert nicht die Kern-Engine. Es gibt keinen automatischen Modell-Download und keinen verpflichtenden Netzwerkdienst. Die Installation von `llama-cpp-python` kann abhängig von Plattform und Hardware Zeit benötigen und benötigt beim Setup Internetzugriff, sofern kein passendes Paket lokal verfügbar ist.
 
 ## Historische technische Änderungen
 

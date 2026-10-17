@@ -1,5 +1,15 @@
 # KOR-NEXUS Änderungsprotokoll
 
+## Arbeitsbranch — Core Engine, Live-Updates und optionale lokale KI
+
+- SSE mit Replay, Polling-Rückfall, Cursor-Reset und konfigurierbarer Journal-Aufbewahrung umgesetzt und mit zwei parallelen SSE-Clients geprüft.
+- Ressourcen-Ledger, Aufgabenabhängigkeiten, deterministische Alerts, geplante Jobs und sichere idempotente Automationen mit bestätigungspflichtigen kritischen Aktionen integriert.
+- Optionalen in-process `llama.cpp`-Provider über `llama-cpp-python`, validierte read-only Beratungs-API und KI-Beratungspanel ergänzt. Standard bleibt deaktiviert; Modell wird erst bei der ersten Anfrage geladen.
+- Einrichtungshelfer erstellt eine isolierte virtuelle Umgebung, verlangt eine bereits vorhandene GGUF-Datei und lädt ausdrücklich kein Modell herunter. Der Standardkern bleibt ohne KI-Laufzeit funktionsfähig.
+- KI-Status zeigt Dateigröße und warnt, wenn die GGUF-Datei den aktuell verfügbaren RAM übersteigt; die Oberfläche kennzeichnet dies als grobe Vorprüfung, nicht als genaue RAM-Garantie.
+- Datenbankmigrationen bleiben additiv; Import/Export, Backup/Restore und vorhandene Module bleiben Teil der Regression.
+- Echte Modell-Lade-/Hardwareprüfung steht noch aus, weil kein konkretes Modell Bestandteil der CI oder des Repositorys ist. Die Provider-Verträge, API-Grenzen und UI-Zustände werden automatisiert geprüft.
+
 ## 1.20.0 — Repository-Transfer, Bereinigung und Release-Gates
 
 - Den vollständigen Projektbaum in `transfer/kor-nexus-1.20.0` wiederhergestellt und die Platzhalter-README durch eine aktuelle Projektübersicht ersetzt.

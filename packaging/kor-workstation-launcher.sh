@@ -12,4 +12,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   printf 'KOR-NEXUS benötigt Python 3. Bitte installiere das Paket python.\n' >&2
   exit 127
 fi
-exec python3 "$APP_DIR/core/server.py" >> "$LOG_DIR/server.log" 2>&1
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+AI_PYTHON="$DATA_HOME/kor-workstation/ai-venv/bin/python"
+if [[ -x "$AI_PYTHON" ]]; then PYTHON="$AI_PYTHON"; else PYTHON="$(command -v python3)"; fi
+exec "$PYTHON" "$APP_DIR/core/server.py" >> "$LOG_DIR/server.log" 2>&1

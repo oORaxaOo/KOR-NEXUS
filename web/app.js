@@ -5,9 +5,10 @@ const modules={atlas:{label:'ATLAS',labelEn:'ATLAS',title:'Atlas-Notizen',titleE
 const states=['Baden-Württemberg','Bayern','Berlin','Brandenburg','Bremen','Hamburg','Hessen','Mecklenburg-Vorpommern','Niedersachsen','Nordrhein-Westfalen','Rheinland-Pfalz','Saarland','Sachsen','Sachsen-Anhalt','Schleswig-Holstein','Thüringen'];
 let active='atlas',selectedRegion='Deutschland',lang='de',tasks=[],records=[],newsItems=[],newsSources=[],settings={},health={},backupItems=[],searchText='',toastTimer,recordsLoadSequence=0,newsRefreshPromise=null;
 let mapMode='world',worldGeoJSON=null,stateGeoJSON=null,mapLocations=[],pendingImportData=null;
+let liveCursor=0,liveSource=null,livePollTimer=null,liveSseRetryTimer=null,liveRefreshTimer=null,livePollBusy=false,liveJournalAvailable=false;
 const t={
- de:{navLabel:'KOMMANDO / MODULE',atlas:'ATLAS',mapOverview:'Weltlage',projects:'PROJEKTE',projectsSub:'Planung & Aufgaben',archive:'ARCHIV',archiveSub:'Kor-Wissensbasis',simulation:'SIMULATION',simulationSub:'Szenarien & Modelle',database:'DATENBANK',databaseSub:'Lokale Datensätze',news:'NACHRICHTEN',newsSub:'RSS-Quellen',systemStatus:'SYSTEMSTATUS',coreStatus:'KERNSTATUS',localData:'Lokale Daten',backups:'Backups',configure:'KONFIGURIEREN',worldSituation:'Weltlage',tasks:'Aufgaben',newTask:'Neue Aufgabe hinzufügen…',offlineNote:'KEINE INTERNETVERBINDUNG — lokale Daten bleiben verfügbar. Live-Nachrichten sind eventuell veraltet.',atlasNotePlaceholder:'Notiz zur ausgewählten Region…',recordSearch:'Einträge durchsuchen…',newsSearch:'Nachrichten durchsuchen…'},
- en:{navLabel:'COMMAND / MODULES',atlas:'ATLAS',mapOverview:'World view',projects:'PROJECTS',projectsSub:'Planning & tasks',archive:'ARCHIVE',archiveSub:'Kor knowledge base',simulation:'SIMULATION',simulationSub:'Scenarios & models',database:'DATABASE',databaseSub:'Local records',news:'NEWS',newsSub:'RSS feeds',systemStatus:'SYSTEM STATUS',coreStatus:'CORE STATUS',localData:'Local data',backups:'Backups',configure:'CONFIGURE',worldSituation:'World overview',tasks:'Tasks',newTask:'Add a task…',offlineNote:'NO INTERNET CONNECTION — local data remains available. Live news may be out of date.',atlasNotePlaceholder:'Note for the selected region…',recordSearch:'Search entries…',newsSearch:'Search news…'}
+ de:{navLabel:'KOMMANDO / MODULE',atlas:'ATLAS',mapOverview:'Weltlage',projects:'PROJEKTE',projectsSub:'Planung & Aufgaben',archive:'ARCHIV',archiveSub:'Kor-Wissensbasis',simulation:'SIMULATION',simulationSub:'Szenarien & Modelle',database:'DATENBANK',databaseSub:'Lokale Datensätze',news:'NACHRICHTEN',newsSub:'RSS-Quellen',systemStatus:'SYSTEMSTATUS',coreStatus:'KERNSTATUS',localData:'Lokale Daten',backups:'Backups',configure:'KONFIGURIEREN',worldSituation:'Weltlage',tasks:'Aufgaben',newTask:'Neue Aufgabe hinzufügen…',offlineNote:'KEINE INTERNETVERBINDUNG — lokale Daten bleiben verfügbar. Live-Nachrichten sind eventuell veraltet.',atlasNotePlaceholder:'Notiz zur ausgewählten Region…',recordSearch:'Einträge durchsuchen…',newsSearch:'Nachrichten durchsuchen…',aiAdvisorTitle:'KI-Beratung',aiPromptLabel:'FRAGE / AUFTRAG AN DEN LOKALEN ASSISTENTEN',aiPromptPlaceholder:'Bitte erkläre, vergleiche oder entwirf einen Vorschlag …',aiGenerateButton:'KI-ANTWORT ERSTELLEN',aiRefreshStatus:'STATUS PRÜFEN'},
+ en:{navLabel:'COMMAND / MODULES',atlas:'ATLAS',mapOverview:'World view',projects:'PROJECTS',projectsSub:'Planning & tasks',archive:'ARCHIVE',archiveSub:'Kor knowledge base',simulation:'SIMULATION',simulationSub:'Scenarios & models',database:'DATABASE',databaseSub:'Local records',news:'NEWS',newsSub:'RSS feeds',systemStatus:'SYSTEM STATUS',coreStatus:'CORE STATUS',localData:'Local data',backups:'Backups',configure:'CONFIGURE',worldSituation:'World overview',tasks:'Tasks',newTask:'Add a task…',offlineNote:'NO INTERNET CONNECTION — local data remains available. Live news may be out of date.',atlasNotePlaceholder:'Note for the selected region…',recordSearch:'Search entries…',newsSearch:'Search news…',aiAdvisorTitle:'AI advisor',aiPromptLabel:'QUESTION / REQUEST FOR THE LOCAL ASSISTANT',aiPromptPlaceholder:'Explain, compare, or draft a proposal…',aiGenerateButton:'GENERATE AI RESPONSE',aiRefreshStatus:'CHECK STATUS'}
 };
 const regionNamesEn={'Nordamerika':'North America','Europa':'Europe','Deutschland':'Germany','Naher Osten':'Middle East','Ostasien':'East Asia','Südamerika':'South America','Global':'Global'};
 const stateNamesEn={'Baden-Württemberg':'Baden-Württemberg','Bayern':'Bavaria','Berlin':'Berlin','Brandenburg':'Brandenburg','Bremen':'Bremen','Hamburg':'Hamburg','Hessen':'Hesse','Mecklenburg-Vorpommern':'Mecklenburg-Western Pomerania','Niedersachsen':'Lower Saxony','Nordrhein-Westfalen':'North Rhine-Westphalia','Rheinland-Pfalz':'Rhineland-Palatinate','Saarland':'Saarland','Sachsen':'Saxony','Sachsen-Anhalt':'Saxony-Anhalt','Schleswig-Holstein':'Schleswig-Holstein','Thüringen':'Thuringia'};
@@ -49,7 +50,7 @@ async function activate(id,refresh=true){
   $('#moduleDescription').textContent=sub;$('#recordTitle').placeholder=lang==='de'?'Titel des neuen Eintrags…':'Title of new entry…';$('#recordBody').placeholder=lang==='de'?'Notizen / Beschreibung …':'Notes / description…';$('#recordRegion').placeholder=lang==='de'?'Bereich / Region (optional)':'Area / region (optional)';$('#recordTags').placeholder=lang==='de'?'Tags (durch Kommas trennen)':'Tags (comma-separated)';$('#recordForm button').textContent=lang==='de'?'＋ EINTRAG SPEICHERN':'＋ SAVE ENTRY';await loadRecords(id);
  }
  if(id==='news'&&refresh)await refreshNews(false);
- if(id==='operations')await loadOperations();
+ if(id==='operations'){await loadOperations();await loadEngine();}
  if(id==='atlas')await renderMapLocations();
  if(id==='projects')await loadProjectDashboard();
  if(id==='workbench')await loadWorkbench();
@@ -178,11 +179,155 @@ function renderNews(){const host=$('#newsList');if(!host)return;const q=$('#news
 const status=$('#feedStatuses');status.innerHTML= ['welt','tagesschau','deutschlandfunk'].map(key=>{const s=newsSources.find(x=>x.source_key===key);const fall={'welt':'WELT','tagesschau':'tagesschau.de','deutschlandfunk':'Deutschlandfunk'};const ok=s&&s.status.startsWith('Aktuell');return `<div class="feed-status"><span class="status-dot ${ok?'good':'bad'}"></span><div><strong>${esc(s?.source_name||fall[key])}</strong><small>${esc(!s?(lang==='de'?'Noch nicht abgerufen':'Not fetched yet'):(lang==='en'&&s.status==='Aktuell'?'Current':lang==='en'&&s.status.startsWith('Aktuell · Feed leer')?'Current · empty feed; cache preserved':lang==='en'&&s.status==='Aktuell · keine Einträge'?'Current · no entries':lang==='en'&&s.status.startsWith('Fehler:')?'Error: '+s.status.slice(7):s.status))}</small></div><span class="feed-count">${s?.item_count||0}</span></div>`}).join('');}
 async function loadBackups(){try{const d=await api('/backups');backupItems=d.items;$('#backupCount').textContent=String(backupItems.length).padStart(2,'0');const h=$('#backupList');h.innerHTML=backupItems.length?backupItems.map(b=>`<div class="backup-row"><div><strong>${esc(formatDate(b.created_at))}</strong><small>${esc(b.name)} · ${formatBytes(b.size)}</small></div><button class="btn ghost small" data-restore="${esc(b.name)}">↶ ${lang==='de'?'WIEDERHERSTELLEN':'RESTORE'}</button></div>`).join(''):`<div class="empty">${lang==='de'?'Noch keine Sicherungen vorhanden.':'No backups available yet.'}</div>`;h.querySelectorAll('[data-restore]').forEach(btn=>btn.addEventListener('click',async()=>{if(!confirm((lang==='de'?'Datenbank auf diesen Stand zurücksetzen? Ein zusätzliches Sicherheitsbackup wird vorher erstellt.\n\n':'Restore this database state? A safety backup is created first.\n\n')+btn.dataset.restore))return;try{const r=await api('/restore',{method:'POST',body:JSON.stringify({name:btn.dataset.restore})});notify(lang==='de'?'Wiederherstellung abgeschlossen. Sicherheitsbackup: '+r.safety_backup.name:'Restore complete. Safety backup: '+r.safety_backup.name);await reloadAll();await loadBackups()}catch(e){notify(e.message,'error')}}));}catch(e){notify(e.message,'error')}}
 function formatBytes(n){if(n<1024)return n+' B';if(n<1024*1024)return (n/1024).toFixed(1)+' KiB';return (n/1024/1024).toFixed(2)+' MiB';}
-async function loadSettings(){try{const d=await api('/settings');settings=d.settings;lang=settings.language||'de';$('#backupKeep').value=settings.backup_keep||'12';$('#backupInterval').value=settings.backup_interval_minutes||'30';$('#settingsDb').textContent='SQLite';$('#unitLabelSingular').value=settings.unit_label_singular||'Mitglied';$('#unitLabelPlural').value=settings.unit_label_plural||'Mitglieder';$('#dataPath').textContent=health.data_dir||'lokal';$('#settingsBackupStatus').textContent=(lang==='de'?'Aktiv, alle ':'Enabled, every ')+(settings.backup_interval_minutes||30)+(lang==='de'?' Min.':' min.');}catch(e){notify(e.message,'error')}}
+async function loadSettings(){try{const d=await api('/settings');settings=d.settings;lang=settings.language||'de';$('#backupKeep').value=settings.backup_keep||'12';$('#backupInterval').value=settings.backup_interval_minutes||'30';$('#eventRetention').value=settings.event_retention_count||'100000';$('#settingsDb').textContent='SQLite';$('#unitLabelSingular').value=settings.unit_label_singular||'Mitglied';$('#unitLabelPlural').value=settings.unit_label_plural||'Mitglieder';$('#dataPath').textContent=health.data_dir||'lokal';$('#settingsBackupStatus').textContent=(lang==='de'?'Aktiv, alle ':'Enabled, every ')+(settings.backup_interval_minutes||30)+(lang==='de'?' Min.':' min.');}catch(e){notify(e.message,'error')}}
 async function openSettings(){const m=$('#settingsModal');m.classList.add('open');await Promise.all([loadSettings(),loadBackups()]);}
+async function refreshLiveViews(event){
+ const jobs=[loadTasks()];
+ if(active==='atlas')jobs.push(renderAtlasRecords(),renderMapLocations(),loadLocationReferences());
+ else if(['projects','archive','simulation','database'].includes(active))jobs.push(loadRecords(active));
+ else if(active==='operations')jobs.push(loadOperations());
+ await Promise.allSettled(jobs);
+}
+async function refreshAllLiveViews(){
+ const jobs=[loadTasks(),loadSettings(),loadBackups(),renderAtlasRecords(),renderMapLocations(),loadLocationReferences(),loadOperations()];
+ if(['projects','archive','simulation','database'].includes(active))jobs.push(loadRecords(active));
+ await Promise.allSettled(jobs);
+}
+function scheduleLiveRefresh(event){
+ clearTimeout(liveRefreshTimer);
+ liveRefreshTimer=setTimeout(()=>{refreshLiveViews(event).catch(error=>console.warn('Live-Aktualisierung fehlgeschlagen',error));},250);
+}
+function acceptLiveEvent(item){
+ const id=Number(item?.event_id)||0;
+ if(id&&id<=liveCursor)return;
+ if(id)liveCursor=id;
+ scheduleLiveRefresh(item);
+}
+async function pollEventJournal(){
+ if(livePollBusy)return;
+ livePollBusy=true;
+ try{
+  const batch=await api('/events?since='+encodeURIComponent(liveCursor)+'&limit=200');
+  if(batch.reset_required){liveCursor=Number(batch.cursor)||0;await refreshAllLiveViews();return;}
+  for(const event of batch.events||[])acceptLiveEvent(event);
+ }catch(error){console.warn('Ereignis-Polling fehlgeschlagen',error);}
+ finally{livePollBusy=false;}
+}
+function stopEventPolling(){
+ if(livePollTimer){clearInterval(livePollTimer);livePollTimer=null;}
+ if(liveSseRetryTimer){clearInterval(liveSseRetryTimer);liveSseRetryTimer=null;}
+}
+function startEventPolling(){
+ if(!livePollTimer){pollEventJournal();livePollTimer=setInterval(pollEventJournal,2000);}
+ if('EventSource' in window&&!liveSseRetryTimer)liveSseRetryTimer=setInterval(tryStartEventSource,30000);
+}
+function tryStartEventSource(){
+ if(liveSource||!('EventSource' in window))return;
+ let source;
+ try{source=new EventSource('/api/events/stream?since='+encodeURIComponent(liveCursor));}
+ catch(error){console.warn('SSE nicht verfügbar; verwende Ereignis-Polling.',error);startEventPolling();return;}
+ liveSource=source;
+ source.addEventListener('change',event=>{
+  try{acceptLiveEvent(JSON.parse(event.data));}
+  catch(error){console.warn('Ungültiges Live-Ereignis ignoriert',error);}
+ });
+ source.addEventListener('reset_required',event=>{
+  try{const data=JSON.parse(event.data);liveCursor=Math.max(0,Number(data.cursor)||0);}catch{}
+  clearTimeout(liveRefreshTimer);
+  liveRefreshTimer=setTimeout(()=>refreshAllLiveViews().catch(error=>console.warn('Live-Snapshot fehlgeschlagen',error)),0);
+ });
+ source.onopen=()=>{
+  if(liveSource!==source)return;
+  stopEventPolling();
+ };
+ source.onerror=()=>{
+  if(liveSource!==source)return;
+  source.close();liveSource=null;startEventPolling();
+ };
+}
+function startLiveUpdates(){
+ if('EventSource' in window)tryStartEventSource();
+ // Poll until SSE has actually opened; it also remains the recovery path after disconnects.
+ startEventPolling();
+}
 async function reloadAll(){const jobs=[loadTasks(),loadSettings(),loadBackups()];if(active==='atlas')jobs.push(renderAtlasRecords());else if(active!=='news')jobs.push(loadRecords(active));await Promise.all(jobs);}
 async function migrateLegacy(){try{if(localStorage.getItem('kor-workstation.migrated-v1'))return;const oldTasks=JSON.parse(localStorage.getItem('kor-workstation.tasks')||'null');const oldRecords=JSON.parse(localStorage.getItem('kor-workstation.records')||'null');if(!oldTasks&&!oldRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const currentTasks=(await api('/tasks')).items;let currentRecords=0;for(const m of ['atlas','projects','archive','simulation','database'])currentRecords+=(await api('/records?module='+m)).items.length;if(currentTasks.length||currentRecords){localStorage.setItem('kor-workstation.migrated-v1','1');return;}const data={schema_version:1,tasks:Array.isArray(oldTasks)?oldTasks:[],records:[]};if(oldRecords&&typeof oldRecords==='object')for(const [module,items] of Object.entries(oldRecords))if(['atlas','projects','archive','simulation','database'].includes(module)&&Array.isArray(items))for(const r of items)data.records.push({...r,module});await api('/import',{method:'POST',body:JSON.stringify({data})});localStorage.setItem('kor-workstation.migrated-v1','1');notify(lang==='de'?'Vorhandene Browserdaten in SQLite übernommen.':'Legacy browser data moved to SQLite.');}catch(e){console.warn('Legacy migration skipped:',e);}}
 let operationUnits=[],operationResources=[],operationProjects=[],operationAssignments=[];
+async function loadAIStatus(){
+ const badge=$('#aiProviderBadge'),button=$('#aiGenerateButton');
+ try{
+  const status=await api('/ai/status');
+  badge.textContent=status.available?(lang==='de'?'LOKAL BEREIT':'LOCAL READY'):(status.enabled?(lang==='de'?'KONFIGURATION FEHLT':'CONFIGURATION NEEDED'):(lang==='de'?'DEAKTIVIERT':'DISABLED'));
+  badge.className='region-label ai-state '+(status.available?'ready':status.enabled?'error':'disabled');
+  $('#aiProviderName').textContent=status.provider||'unbekannt';
+  $('#aiModelName').textContent=status.model_name||(status.model_loaded?(lang==='de'?'Modell geladen':'Model loaded'):(lang==='de'?'kein Modell geladen':'no model loaded'));
+  const memoryNote=$('#aiMemoryNote');
+  if(status.model_size_bytes!==null&&status.model_size_bytes!==undefined){
+   const modelSize=formatBytes(Number(status.model_size_bytes)||0),available=status.available_memory_bytes;
+   memoryNote.hidden=false;memoryNote.className='ai-memory-note'+(status.memory_warning?' warning':'');
+   memoryNote.textContent=status.memory_warning
+    ?(lang==='de'?'WARNUNG: GGUF-Datei '+modelSize+' ist größer als der aktuell verfügbare RAM ('+formatBytes(Number(available)||0)+'). Laden kann scheitern oder stark auslagern; Kontext und Backend benötigen zusätzlichen Speicher.':'WARNING: GGUF file '+modelSize+' exceeds currently available RAM ('+formatBytes(Number(available)||0)+'). Loading may fail or swap heavily; context and backend need additional memory.')
+    :(lang==='de'?'GGUF-Datei: '+modelSize+(available!==null&&available!==undefined?' · aktuell verfügbarer RAM: '+formatBytes(Number(available)||0):'')+'. Das ist eine grobe Vorprüfung, keine Garantie für den tatsächlichen Speicherbedarf.':'GGUF file: '+modelSize+(available!==null&&available!==undefined?' · currently available RAM: '+formatBytes(Number(available)||0):'')+'. This is a rough preflight, not a guarantee of actual memory needs.');
+  }else{memoryNote.hidden=true;memoryNote.textContent='';memoryNote.className='ai-memory-note';}
+  $('#aiProviderMessage').textContent=status.reason||(lang==='de'?'Die KI ist optional und hat keinen direkten Schreibzugriff auf deine Daten.':'AI is optional and has no direct write access to your data.');
+  button.disabled=!status.available;
+  return status;
+ }catch(error){
+  badge.textContent=lang==='de'?'STATUS NICHT VERFÜGBAR':'STATUS UNAVAILABLE';badge.className='region-label ai-state error';
+  $('#aiProviderName').textContent='—';$('#aiModelName').textContent='—';$('#aiProviderMessage').textContent=error.message;
+  button.disabled=true;return null;
+ }
+}
+async function loadEngine(){
+ const [status,alerts,rules,proposals,jobs]=await Promise.all([
+  api('/engine/status'),api('/engine/alerts?status=all'),api('/automation/rules'),api('/actions/proposals?status=all'),api('/engine/jobs?status=all')
+ ]);
+ await loadAIStatus();
+ const c=status.counts||{};
+ $('#engineMetrics').innerHTML=[
+  ['OFFENE ALERTS',c.open_alerts??0],['AKTIVE REGELN',c.enabled_automation_rules??0],['OFFENE FREIGABEN',c.pending_action_proposals??0],['GEPLANTE JOBS',c.pending_scheduled_jobs??0]
+ ].map(([label,value])=>`<div class="dashboard-metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('');
+ const alertItems=alerts.items||[];
+ $('#engineAlerts').innerHTML=alertItems.length?alertItems.map(a=>`<article class="engine-item"><div class="engine-item-head"><strong>${esc(a.title)}</strong><span class="engine-severity severity-${esc(a.severity)}">${esc(String(a.severity).toUpperCase())}</span></div><p>${esc(a.message)}</p><div class="engine-item-foot"><span>${esc(a.status)} · ${esc(a.entity_type||'system')} ${esc(a.entity_id||'')}</span>${a.status==='open'?'<button class="btn ghost small" type="button" data-ack-alert="'+a.id+'">BESTÄTIGEN</button>':''}</div></article>`).join(''):'<div class="empty">Keine Alerts vorhanden. Eine Engine-Auswertung prüft die konfigurierten Mindestbestände.</div>';
+ const ruleItems=rules.items||[];$('#automationRuleCount').textContent=String(ruleItems.length).padStart(2,'0');
+ $('#automationRuleList').innerHTML=ruleItems.length?ruleItems.map(r=>`<article class="engine-item"><div class="engine-item-head"><strong>${esc(r.name)}</strong><span class="engine-severity ${r.enabled?'severity-info':'severity-muted'}">${r.enabled?'AKTIV':'INAKTIV'}</span></div><p>${esc(r.trigger_type)} → ${esc(r.action_type)} · Risiko: ${esc(r.risk_level)}</p><div class="engine-item-foot"><code>${esc(r.rule_key)}</code><button class="btn ghost small" type="button" data-toggle-rule="${r.id}" data-enabled="${r.enabled?'1':'0'}">${r.enabled?'DEAKTIVIEREN':'AKTIVIEREN'}</button></div></article>`).join(''):'<div class="empty">Noch keine Regeln. Importierte Regeln sind aus Sicherheitsgründen deaktiviert.</div>';
+ const proposalItems=proposals.items||[];
+ $('#actionProposalList').innerHTML=proposalItems.length?proposalItems.map(p=>`<article class="engine-item"><div class="engine-item-head"><strong>Bestandsanpassung #${p.id}</strong><span class="engine-severity severity-${p.status==='pending'?'critical':p.status==='executed'?'info':'muted'}">${esc(p.status.toUpperCase())}</span></div><p>Ressource #${esc(p.payload.resource_id)} · vorgeschlagene Änderung +${esc(p.payload.quantity_delta)} · ${esc(p.rationale)}</p><div class="engine-item-foot"><span>${esc(p.risk_level)} · ausdrücklich bestätigungspflichtig</span><div class="engine-actions">${p.status==='pending'?'<button class="btn small" type="button" data-proposal-approve="'+p.id+'">BESTÄTIGEN</button><button class="btn ghost small" type="button" data-proposal-reject="'+p.id+'">ABLEHNEN</button>':''}${p.status==='approved'?'<button class="btn small" type="button" data-proposal-execute="'+p.id+'">JETZT AUSFÜHREN</button>':''}</div></div></article>`).join(''):'<div class="empty">Keine Aktionsvorschläge offen oder protokolliert.</div>';
+ const jobItems=jobs.items||[];$('#scheduledJobCount').textContent=String(jobItems.filter(j=>j.status==='pending').length).padStart(2,'0');
+ $('#scheduledJobList').innerHTML=jobItems.length?jobItems.slice(0,8).map(j=>`<article class="engine-item"><div class="engine-item-head"><strong>${esc(j.job_type)}</strong><span class="engine-severity ${j.status==='completed'?'severity-info':'severity-muted'}">${esc(j.status)}</span></div><p>${esc(j.due_at)}</p><small>${esc(j.job_key)}</small></article>`).join(''):'<div class="empty">Keine geplanten Jobs.</div>';
+ $('#engineAlerts').querySelectorAll('[data-ack-alert]').forEach(b=>b.addEventListener('click',async()=>{try{await api('/engine/alerts/'+b.dataset.ackAlert+'/acknowledge',{method:'POST',body:'{}'});await loadEngine();notify('Alert bestätigt.')}catch(e){notify(e.message,'error')}}));
+ $('#automationRuleList').querySelectorAll('[data-toggle-rule]').forEach(b=>b.addEventListener('click',async()=>{try{await api('/automation/rules/'+b.dataset.toggleRule,{method:'PATCH',body:JSON.stringify({enabled:b.dataset.enabled!=='1'})});await loadEngine();notify('Automationsregel aktualisiert.')}catch(e){notify(e.message,'error')}}));
+ $('#actionProposalList').querySelectorAll('[data-proposal-approve]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Kritische Aktion ausdrücklich bestätigen? Die Änderung wird noch nicht ausgeführt.'))return;try{await api('/actions/proposals/'+b.dataset.proposalApprove+'/approve',{method:'POST',body:'{}'});await loadEngine();notify('Vorschlag bestätigt. Separates Ausführen bleibt erforderlich.')}catch(e){notify(e.message,'error')}}));
+ $('#actionProposalList').querySelectorAll('[data-proposal-reject]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Diesen kritischen Vorschlag ablehnen?'))return;try{await api('/actions/proposals/'+b.dataset.proposalReject+'/reject',{method:'POST',body:'{}'});await loadEngine();notify('Vorschlag abgelehnt.')}catch(e){notify(e.message,'error')}}));
+ $('#actionProposalList').querySelectorAll('[data-proposal-execute]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Bestätigte Bestandsänderung jetzt ausführen?'))return;try{await api('/actions/proposals/'+b.dataset.proposalExecute+'/execute',{method:'POST',body:'{}'});await loadEngine();await loadOperations();notify('Bestandsänderung ausgeführt.')}catch(e){notify(e.message,'error')}}));
+}
+function updateAutomationFields(){
+ const adjust=$('#automationAction').value==='adjust_resource';
+ $('#automationAdjustFields').hidden=!adjust;$('#automationTaskFields').hidden=adjust;
+ if(adjust)$('#automationTrigger').value='resource_low_stock';
+}
+function wireEngine(){
+ $('#aiRefreshStatus').addEventListener('click',()=>loadAIStatus());
+ $('#aiAdvisorForm').addEventListener('submit',async e=>{
+  e.preventDefault();const prompt=$('#aiPrompt').value.trim();if(!prompt)return;
+  const button=$('#aiGenerateButton'),output=$('#aiResponse');button.disabled=true;output.hidden=false;output.textContent=lang==='de'?'Lokale KI arbeitet…':'Local AI is generating…';
+  try{
+   const result=await api('/ai/generate',{method:'POST',body:JSON.stringify({prompt,context:{active_module:active,selected_region:selectedRegion}})});
+   output.textContent=result.response;
+  }catch(error){output.textContent=(lang==='de'?'KI-Anfrage fehlgeschlagen: ':'AI request failed: ')+error.message;}
+  finally{const status=await loadAIStatus();button.disabled=!status?.available;}
+ });
+ $('#engineEvaluate').addEventListener('click',async()=>{try{await api('/engine/evaluate',{method:'POST',body:'{}'});await loadEngine();notify('Engine-Auswertung abgeschlossen.')}catch(e){notify(e.message,'error')}});
+ $('#automationRun').addEventListener('click',async()=>{try{const result=await api('/automation/run',{method:'POST',body:'{}'});await loadEngine();notify('Automationen geprüft: '+(result.result.actions_executed||0)+' Routineaktion(en), '+(result.result.proposals_created||0)+' Vorschlag/Vorschläge.')}catch(e){notify(e.message,'error')}});
+ $('#runDueJobs').addEventListener('click',async()=>{try{const result=await api('/engine/jobs/run-due',{method:'POST',body:'{}'});await loadEngine();notify('Fällige Jobs verarbeitet: '+result.result.processed+'.')}catch(e){notify(e.message,'error')}});
+ $('#automationAction').addEventListener('change',updateAutomationFields);updateAutomationFields();
+ $('#automationRuleForm').addEventListener('submit',async e=>{e.preventDefault();const actionType=$('#automationAction').value;const action=actionType==='create_task'?{title_prefix:$('#automationTitlePrefix').value,area:$('#automationArea').value}:{quantity_delta:Number($('#automationQuantityDelta').value),notes:$('#automationActionNotes').value};const body={rule_key:$('#automationRuleKey').value.trim(),name:$('#automationRuleName').value.trim(),trigger_type:$('#automationTrigger').value,action_type:actionType,action,enabled:$('#automationEnabled').checked};try{await api('/automation/rules',{method:'POST',body:JSON.stringify(body)});e.target.reset();$('#automationArea').value='Logistik';updateAutomationFields();await loadEngine();notify('Automationsregel gespeichert.')}catch(err){notify(err.message,'error')}});
+ $('#scheduledJobDue').value=(()=>{const d=new Date(Date.now()+60000);d.setSeconds(0,0);const off=d.getTimezoneOffset()*60000;return new Date(d.getTime()-off).toISOString().slice(0,16)})();
+ $('#scheduledJobKey').value='job-'+Date.now();
+ $('#scheduledJobForm').addEventListener('submit',async e=>{e.preventDefault();try{await api('/engine/jobs',{method:'POST',body:JSON.stringify({job_key:$('#scheduledJobKey').value.trim(),job_type:$('#scheduledJobType').value,due_at:new Date($('#scheduledJobDue').value).toISOString()})});$('#scheduledJobKey').value='job-'+Date.now();await loadEngine();notify('Job eingeplant. Der lokale Scheduler prüft fällige Jobs alle 30 Sekunden.')}catch(err){notify(err.message,'error')}});
+}
+
+
 async function loadOperations(){
  try{
   const [u,r,a]=await Promise.all([api('/units'),api('/resources'),api('/assignments')]);
@@ -262,7 +407,7 @@ function wireCommandPalette(){
  render();
 }
 function wire(){
- wireOperations();wireProjectDashboard();wireMapPlanner();wireGeographicMap();
+ wireOperations();wireEngine();wireProjectDashboard();wireMapPlanner();wireGeographicMap();
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-module]');if(b)activate(b.dataset.module).catch(err=>notify(err.message,'error'))});
 $$('.region').forEach(b=>b.addEventListener('click',()=>chooseRegion(b.dataset.region)));
 $('#taskForm').addEventListener('submit',async e=>{e.preventDefault();const inp=$('#taskInput'),title=inp.value.trim();if(!title)return;try{await api('/tasks',{method:'POST',body:JSON.stringify({title,area:modules[active]?.label||'SYSTEM'})});inp.value='';await loadTasks();notify(lang==='de'?'Aufgabe gespeichert.':'Task saved.')}catch(err){notify(err.message,'error')}});
@@ -274,16 +419,16 @@ $('#langBtn').addEventListener('click',async()=>{lang=lang==='de'?'en':'de';try{
 $('#saveLabels').addEventListener('click',async()=>{try{const result=await api('/settings',{method:'PATCH',body:JSON.stringify({unit_label_singular:$('#unitLabelSingular').value.trim(),unit_label_plural:$('#unitLabelPlural').value.trim()})});settings=result.settings;await loadOperations();notify('Bezeichnungen gespeichert.')}catch(e){notify(e.message,'error')}});
  $('#createBackup').addEventListener('click',async()=>{const b=$('#createBackup');b.disabled=true;try{const d=await api('/backups',{method:'POST',body:'{}'});notify((lang==='de'?'Sicherung erstellt: ':'Backup created: ')+d.item.name);await loadBackups()}catch(e){notify(e.message,'error')}finally{b.disabled=false}});
 $('#reloadBackups').addEventListener('click',loadBackups);
-async function saveBackupSettings(){try{const x=await api('/settings',{method:'PATCH',body:JSON.stringify({backup_keep:$('#backupKeep').value,backup_interval_minutes:$('#backupInterval').value})});settings=x.settings;$('#settingsBackupStatus').textContent=(lang==='de'?'Aktiv, alle ':'Enabled, every ')+settings.backup_interval_minutes+(lang==='de'?' Min.':' min.');await loadBackups();notify(lang==='de'?'Backupeinstellungen gespeichert.':'Backup settings saved.')}catch(e){notify(e.message,'error')}}
-$('#backupKeep').addEventListener('change',saveBackupSettings);$('#backupInterval').addEventListener('change',saveBackupSettings);
+async function saveBackupSettings(){try{const x=await api('/settings',{method:'PATCH',body:JSON.stringify({backup_keep:$('#backupKeep').value,backup_interval_minutes:$('#backupInterval').value,event_retention_count:$('#eventRetention').value})});settings=x.settings;$('#settingsBackupStatus').textContent=(lang==='de'?'Aktiv, alle ':'Enabled, every ')+settings.backup_interval_minutes+(lang==='de'?' Min.':' min.');await loadBackups();notify(lang==='de'?'Backupeinstellungen gespeichert.':'Backup settings saved.')}catch(e){notify(e.message,'error')}}
+$('#backupKeep').addEventListener('change',saveBackupSettings);$('#backupInterval').addEventListener('change',saveBackupSettings);$('#eventRetention').addEventListener('change',saveBackupSettings);
 $('#exportData').addEventListener('click',async()=>{try{const d=await api('/export');const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`kor-workstation-export-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);notify(lang==='de'?'Datenexport erstellt.':'Data export created.')}catch(e){notify(e.message,'error')}});
 function clearImportPreview(){pendingImportData=null;$('#importPreview').hidden=true;$('#importPreviewSummary').replaceChildren();$('#importPreviewIssues').replaceChildren();$('#importPreviewIssues').hidden=true;$('#confirmImport').disabled=true;$('#importFile').value=''}
-function renderImportPreview(report){const host=$('#importPreviewSummary'),summary=report.summary||{};host.replaceChildren();const labels=[['schema_version','Schema-Version'],['tasks','Aufgaben'],['records','Datensätze gesamt'],['map_locations','Kartenmarker'],['units','Mitgliederprofile'],['resources','Ressourcen'],['project_assignments','Projektzuweisungen'],['settings','Einstellungen'],['geodata','Geodatenobjekte'],['geodata_features','Geodaten-Features'],['news_items','News-Einträge'],['news_sources','News-Quellen']];for(const [key,label] of labels){const card=document.createElement('div');card.className='import-preview-count';const strong=document.createElement('strong');strong.textContent=String(summary[key]??0);const caption=document.createElement('span');caption.textContent=label;card.append(strong,caption);host.append(card)}for(const [module,count] of Object.entries(summary.records_by_module||{})){const card=document.createElement('div');card.className='import-preview-count';const strong=document.createElement('strong');strong.textContent=String(count);const caption=document.createElement('span');caption.textContent='Modul: '+module;card.append(strong,caption);host.append(card)}const issues=$('#importPreviewIssues');issues.replaceChildren();if(report.issues?.length){const heading=document.createElement('strong');heading.textContent=lang==='de'?'Konflikte / Validierungsfehler':'Conflicts / validation errors';const list=document.createElement('ul');for(const item of report.issues){const li=document.createElement('li');li.textContent=item.message||'Validierungsfehler';list.append(li)}issues.append(heading,list);issues.hidden=false}else issues.hidden=true;$('#importPreviewTitle').textContent=report.valid?(lang==='de'?'Importvorschau — bereit zur Bestätigung':'Import preview — ready for confirmation'):(lang==='de'?'Importvorschau — Korrektur erforderlich':'Import preview — corrections required');const status=$('#importPreviewStatus');status.textContent=report.valid?(lang==='de'?'VALIDIERT':'VALIDATED'):(lang==='de'?'FEHLER':'INVALID');status.className='import-preview-status '+(report.valid?'valid':'invalid');$('#importPreviewNote').textContent=report.note||'';$('#confirmImport').disabled=!report.valid;$('#confirmImport').textContent=lang==='de'?'JETZT IMPORTIEREN — DATEN ERSETZEN':'IMPORT NOW — REPLACE DATA';$('#cancelImport').textContent=lang==='de'?'ABBRECHEN':'CANCEL';$('#importPreview').hidden=false;}
+function renderImportPreview(report){const host=$('#importPreviewSummary'),summary=report.summary||{};host.replaceChildren();const labels=[['schema_version','Schema-Version'],['tasks','Aufgaben'],['records','Datensätze gesamt'],['map_locations','Kartenmarker'],['units','Mitgliederprofile'],['resources','Ressourcen'],['resource_movements','Ressourcenbewegungen'],['resource_policies','Bestandsrichtlinien'],['task_dependencies','Aufgabenabhängigkeiten'],['automation_rules','Automationsregeln'],['project_assignments','Projektzuweisungen'],['settings','Einstellungen'],['geodata','Geodatenobjekte'],['geodata_features','Geodaten-Features'],['news_items','News-Einträge'],['news_sources','News-Quellen']];for(const [key,label] of labels){const card=document.createElement('div');card.className='import-preview-count';const strong=document.createElement('strong');strong.textContent=String(summary[key]??0);const caption=document.createElement('span');caption.textContent=label;card.append(strong,caption);host.append(card)}for(const [module,count] of Object.entries(summary.records_by_module||{})){const card=document.createElement('div');card.className='import-preview-count';const strong=document.createElement('strong');strong.textContent=String(count);const caption=document.createElement('span');caption.textContent='Modul: '+module;card.append(strong,caption);host.append(card)}const issues=$('#importPreviewIssues');issues.replaceChildren();if(report.issues?.length){const heading=document.createElement('strong');heading.textContent=lang==='de'?'Konflikte / Validierungsfehler':'Conflicts / validation errors';const list=document.createElement('ul');for(const item of report.issues){const li=document.createElement('li');li.textContent=item.message||'Validierungsfehler';list.append(li)}issues.append(heading,list);issues.hidden=false}else issues.hidden=true;$('#importPreviewTitle').textContent=report.valid?(lang==='de'?'Importvorschau — bereit zur Bestätigung':'Import preview — ready for confirmation'):(lang==='de'?'Importvorschau — Korrektur erforderlich':'Import preview — corrections required');const status=$('#importPreviewStatus');status.textContent=report.valid?(lang==='de'?'VALIDIERT':'VALIDATED'):(lang==='de'?'FEHLER':'INVALID');status.className='import-preview-status '+(report.valid?'valid':'invalid');$('#importPreviewNote').textContent=report.note||'';$('#confirmImport').disabled=!report.valid;$('#confirmImport').textContent=lang==='de'?'JETZT IMPORTIEREN — DATEN ERSETZEN':'IMPORT NOW — REPLACE DATA';$('#cancelImport').textContent=lang==='de'?'ABBRECHEN':'CANCEL';$('#importPreview').hidden=false;}
 $('#importFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;pendingImportData=null;$('#confirmImport').disabled=true;$('#importPreview').hidden=false;$('#importPreviewTitle').textContent=lang==='de'?'Datei wird geprüft…':'Validating file…';$('#importPreviewSummary').replaceChildren();$('#importPreviewIssues').hidden=true;try{if(file.size>10*1024*1024)throw new Error(lang==='de'?'Importdatei ist größer als 10 MiB.':'Import file exceeds 10 MiB.');const data=JSON.parse(await file.text());const report=await api('/import/preview',{method:'POST',body:JSON.stringify({data})});pendingImportData=data;renderImportPreview(report);}catch(err){const report={valid:false,summary:{},issues:[{message:err.message}],note:lang==='de'?'Die Datei wurde nicht importiert. Die Vorschau verändert keine Daten.':'The file was not imported. Preview does not change data.'};renderImportPreview(report);} });
 $('#cancelImport').addEventListener('click',clearImportPreview);
 $('#confirmImport').addEventListener('click',async()=>{if(!pendingImportData||$('#confirmImport').disabled)return;const button=$('#confirmImport');button.disabled=true;button.textContent=lang==='de'?'IMPORT LÄUFT…':'IMPORTING…';try{const r=await api('/import',{method:'POST',body:JSON.stringify({data:pendingImportData})});notify((lang==='de'?'Import abgeschlossen: ':'Import complete: ')+r.tasks+' tasks, '+r.records+' records, '+(r.units??0)+' profiles, '+(r.resources??0)+' resources, '+(r.project_assignments??0)+' assignments.');clearImportPreview();await reloadAll();await loadBackups();}catch(err){notify((lang==='de'?'Import fehlgeschlagen: ':'Import failed: ')+err.message,'error');button.disabled=false;button.textContent=lang==='de'?'ERNEUT VERSUCHEN — DATEN ERSETZEN':'RETRY — REPLACE DATA';}});
 window.addEventListener('online',()=>{$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';$('#offlineNote').hidden=true});window.addEventListener('offline',()=>{$('#connection').textContent=lang==='de'?'● OFFLINE':'● OFFLINE';$('#offlineNote').hidden=false});
 }
-async function init(){wire();wireCommandPalette();renderStates();dateLabel();try{health=await api('/health');$('#coreState').textContent='● READY';$('#dbState').textContent='SQLITE';$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';await loadSettings();await migrateLegacy();await Promise.all([loadTasks(),renderAtlasRecords(),loadBackups(),renderMapLocations(),loadGeographicData()]);await loadNewsCache();setLanguage();await chooseRegion(selectedRegion);document.documentElement.dataset.appReady='true';window.__KOR_APP_READY__=true;}catch(e){$('#coreState').textContent='● FEHLER';$('#connection').textContent='● CORE OFFLINE';$('#offlineNote').hidden=false;notify((lang==='de'?'Kern konnte nicht initialisiert werden: ':'Core initialization failed: ')+e.message,'error');}}
+async function init(){wire();wireCommandPalette();renderStates();dateLabel();try{health=await api('/health');try{const eventSnapshot=await api('/events?since=0&snapshot=1');liveCursor=Number(eventSnapshot.latest_event_id)||0;liveJournalAvailable=true;}catch(eventError){console.warn('Live-Ereignisse nicht verfügbar; klassische Aktualisierung bleibt aktiv.',eventError);}$('#coreState').textContent='● READY';$('#dbState').textContent='SQLITE';$('#connection').textContent=lang==='de'?'● KERN VERBUNDEN':'● CORE CONNECTED';await loadSettings();await migrateLegacy();await Promise.all([loadTasks(),renderAtlasRecords(),loadBackups(),renderMapLocations(),loadGeographicData()]);await loadNewsCache();setLanguage();await chooseRegion(selectedRegion);if(liveJournalAvailable)startLiveUpdates();document.documentElement.dataset.appReady='true';window.__KOR_APP_READY__=true;}catch(e){$('#coreState').textContent='● FEHLER';$('#connection').textContent='● CORE OFFLINE';$('#offlineNote').hidden=false;notify((lang==='de'?'Kern konnte nicht initialisiert werden: ':'Core initialization failed: ')+e.message,'error');}}
 init();
 })();

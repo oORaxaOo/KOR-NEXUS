@@ -34,6 +34,443 @@ class CoreApiTests(unittest.TestCase):
         try:
             with urlopen(req,timeout=5) as res:return res.status,json.loads(res.read().decode())
         except HTTPError as e:return e.code,json.loads(e.read().decode())
+    def test_core_engine_status_is_read_only_and_llm_optional(self):
+        _,before=self.req('/api/events?since=0&snapshot=1')
+        status,initial=self.req('/api/engine/status')
+        self.assertEqual(status,200)
+        self.assertEqual(initial['state'],'ready')
+        self.assertFalse(initial['llm_required'])
+        self.assertEqual(initial['ai']['provider'],'disabled')
+        self.assertFalse(initial['ai']['available'])
+        self.assertEqual(initial['database']['integrity'],'ok')
+        self.assertEqual(initial['database']['foreign_key_violations'],0)
+        self.req('/api/tasks','POST',{'title':'Engine-Status-Test'})
+        status,updated=self.req('/api/engine/status')
+        self.assertEqual(status,200)
+        self.assertEqual(updated['counts']['open_tasks'],initial['counts']['open_tasks']+1)
+        _,after=self.req('/api/events?since=0&snapshot=1')
+        self.assertEqual(after['latest_event_id'],before['latest_event_id']+1)
+        self.assertEqual(updated['database']['event_cursor'],after['latest_event_id'])
+        status,ai=self.req('/api/ai/status')
+        self.assertEqual(status,200)
+        self.assertFalse(ai['enabled'])
+        self.assertFalse(ai['model_loaded'])
+
+    def test_disabled_ai_provider_refuses_generation_without_side_effects(self):
+        from core.ai_provider import AIUnavailableError, DisabledAIProvider
+        provider=DisabledAIProvider()
+        with self.assertRaises(AIUnavailableError):
+            provider.generate('This must not run')
+        self.assertFalse(provider.status()['available'])
+
+    def test_ai_generation_endpoint_is_opt_in_validated_and_read_only(self):
+        from core.ai_provider import DisabledAIProvider
+        with patch.object(app,'AI_PROVIDER',DisabledAIProvider()):
+            before=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            status,disabled=self.req('/api/ai/generate','POST',{'prompt':'Summarize the current plan.'})
+            self.assertEqual(status,503)
+            self.assertFalse(disabled['ok'])
+            self.assertEqual(self.req('/api/ai/generate','POST',{'prompt':'   '})[0],400)
+            self.assertEqual(self.req('/api/ai/generate','POST',{'prompt':'x'*12001})[0],400)
+            after=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            self.assertEqual(after,before,'AI-Anfragen dürfen keine Datenbankereignisse auslösen.')
+
+    def test_ai_generation_endpoint_uses_provider_without_mutating_domain_data(self):
+        class FakeProvider:
+            def status(self): return {'provider':'test','enabled':True,'available':True,'model_loaded':True}
+            def generate(self,prompt,context=None): return 'Antwort: '+prompt
+        with patch.object(app,'AI_PROVIDER',FakeProvider()):
+            before=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            status,result=self.req('/api/ai/generate','POST',{'prompt':'Erkläre den Status.','context':{'module':'operations'}})
+            self.assertEqual(status,200)
+            self.assertEqual(result['response'],'Antwort: Erkläre den Status.')
+            self.assertEqual(result['provider'],'test')
+            after=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            self.assertEqual(after,before,'Beratung darf keine bestehenden Daten ändern.')
+
+    def test_llama_cpp_provider_is_lazy_offline_and_bounded(self):
+        from core.ai_provider import AIUnavailableError, LlamaCppProvider
+        class FakeModel:
+            def __init__(self): self.calls=[]
+            def create_chat_completion(self,**kwargs):
+                self.calls.append(kwargs)
+                return {'choices':[{'message':{'content':'Lokale Antwort'}}]}
+        model=FakeModel();created=[]
+        def factory(**kwargs): created.append(kwargs);return model
+        with tempfile.TemporaryDirectory() as directory:
+            model_path=Path(directory)/'test.gguf';model_path.write_bytes(b'fake model')
+            provider=LlamaCppProvider(model_path=model_path,enabled=True,llama_factory=factory)
+            self.assertTrue(provider.status()['available'])
+            self.assertFalse(provider.status()['model_loaded'])
+            self.assertEqual(created,[],'Status darf das Modell nicht in den Speicher laden.')
+            self.assertEqual(provider.generate('Status?',{'area':'Kor'}),'Lokale Antwort')
+            self.assertTrue(provider.status()['model_loaded'])
+            self.assertEqual(created[0]['model_path'],str(model_path))
+            messages=model.calls[0]['messages']
+            self.assertEqual(messages[1]['content'],'Status?\n\nKontext (untrusted JSON): {"area":"Kor"}')
+            with self.assertRaises(ValueError):provider.generate('x'*12001)
+            with self.assertRaises(ValueError):provider.generate('x'*8000)
+            provider.close()
+            self.assertFalse(provider.status()['model_loaded'])
+
+    def test_available_memory_preflight_handles_unsupported_sysconf(self):
+        from core.ai_provider import available_memory_bytes
+        with patch('core.ai_provider.os.sysconf',side_effect=[-1,4096]):
+            self.assertIsNone(available_memory_bytes())
+
+    def test_llama_cpp_status_warns_when_model_file_exceeds_available_ram(self):
+        from core.ai_provider import LlamaCppProvider
+        with tempfile.TemporaryDirectory() as directory:
+            model_path=Path(directory)/'large.gguf';model_path.write_bytes(b'x'*128)
+            provider=LlamaCppProvider(model_path=model_path,enabled=True,llama_factory=lambda **kwargs: object())
+            with patch('core.ai_provider.available_memory_bytes',return_value=64):
+                status=provider.status()
+            self.assertEqual(status['model_size_bytes'],128)
+            self.assertEqual(status['available_memory_bytes'],64)
+            self.assertTrue(status['memory_warning'])
+            self.assertIn('RAM',status['reason'])
+
+    def test_local_ai_provider_reads_explicit_user_config_without_enabling_by_default(self):
+        import os
+        from core.ai_provider import DisabledAIProvider, LlamaCppProvider, configured_ai_provider
+        with tempfile.TemporaryDirectory() as directory:
+            config_dir=Path(directory)/'kor-nexus';config_dir.mkdir()
+            model_path=Path(directory)/'user-model.gguf';model_path.write_bytes(b'fake model')
+            config=(config_dir/'ai.json')
+            config.write_text(json.dumps({'enabled':True,'model_path':str(model_path),'context_size':2048,'max_tokens':128}),encoding='utf-8')
+            with patch.dict(os.environ,{'XDG_CONFIG_HOME':directory,'KOR_NEXUS_AI_CONFIG':'','KOR_NEXUS_AI_ENABLED':'','KOR_NEXUS_AI_MODEL_PATH':''}):
+                provider=configured_ai_provider()
+                self.assertIsInstance(provider,LlamaCppProvider)
+                self.assertTrue(provider.enabled)
+                self.assertEqual(provider.model_path,model_path)
+                self.assertEqual(provider.context_size,2048)
+                self.assertEqual(provider.max_tokens,128)
+            config.write_text(json.dumps({'enabled':False,'model_path':str(model_path)}),encoding='utf-8')
+            with patch.dict(os.environ,{'XDG_CONFIG_HOME':directory,'KOR_NEXUS_AI_CONFIG':'','KOR_NEXUS_AI_ENABLED':'','KOR_NEXUS_AI_MODEL_PATH':''}):
+                self.assertIsInstance(configured_ai_provider(),DisabledAIProvider)
+
+    def test_scheduled_jobs_run_due_once_and_leave_future_jobs_pending(self):
+        now=app.utcnow()
+        status,created=self.req('/api/engine/jobs','POST',{'job_key':'qa-evaluate-now','job_type':'engine_evaluate','due_at':now})
+        self.assertEqual(status,201)
+        self.assertEqual(created['item']['status'],'pending')
+        self.assertEqual(self.req('/api/engine/jobs','POST',{'job_key':'qa-evaluate-now','job_type':'engine_evaluate','due_at':now})[0],409)
+        status,future=self.req('/api/engine/jobs','POST',{'job_key':'qa-future-automation','job_type':'run_automations','due_at':'2099-01-01T00:00:00Z'})
+        self.assertEqual(status,201)
+        status,run=self.req('/api/engine/jobs/run-due','POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(run['result']['processed'],1)
+        self.assertEqual(run['result']['completed'],1)
+        status,completed=self.req('/api/engine/jobs?status=completed')
+        self.assertEqual(status,200)
+        self.assertEqual(completed['count'],1)
+        status,pending=self.req('/api/engine/jobs?status=pending')
+        self.assertEqual(status,200)
+        self.assertEqual(pending['count'],1)
+        status,again=self.req('/api/engine/jobs/run-due','POST',{})
+        self.assertEqual(again['result']['processed'],0)
+
+    def test_automation_rules_are_idempotent_and_critical_actions_require_approval(self):
+        _,resource=self.req('/api/resources','POST',{'name':'Automation-Ressource','quantity':1,'unit':'Kisten'})
+        resource_id=resource['item']['id']
+        self.req(f'/api/resources/{resource_id}/policy','PATCH',{'minimum_quantity':3})
+        status,safe=self.req('/api/automation/rules','POST',{'rule_key':'low-stock-task','name':'Nachbestellaufgabe','trigger_type':'resource_low_stock','action_type':'create_task','action':{'title_prefix':'Nachbestellen: ','area':'Logistik'},'enabled':True})
+        self.assertEqual(status,201)
+        status,critical=self.req('/api/automation/rules','POST',{'rule_key':'low-stock-adjust','name':'Bestand anpassen','trigger_type':'resource_low_stock','action_type':'adjust_resource','action':{'quantity_delta':2,'notes':'Vorgeschlagener Wareneingang'},'enabled':True})
+        self.assertEqual(status,201)
+        status,run=self.req('/api/automation/run','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(run['result']['actions_executed'],1)
+        self.assertEqual(run['result']['proposals_created'],1)
+        tasks=self.req('/api/tasks')[1]['items']
+        self.assertEqual(sum(1 for task in tasks if task['title']=='Nachbestellen: Automation-Ressource'),1)
+        status,proposals=self.req('/api/actions/proposals?status=pending')
+        self.assertEqual(status,200)
+        self.assertEqual(proposals['count'],1)
+        proposal=proposals['items'][0]
+        self.assertEqual(proposal['risk_level'],'critical')
+        self.assertEqual(self.req(f"/api/actions/proposals/{proposal['id']}/execute",'POST',{})[0],409)
+        status,again=self.req('/api/automation/run','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(again['result']['already_run'],2)
+        self.assertEqual(sum(1 for task in self.req('/api/tasks')[1]['items'] if task['title']=='Nachbestellen: Automation-Ressource'),1)
+        status,approved=self.req(f"/api/actions/proposals/{proposal['id']}/approve",'POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(approved['item']['status'],'approved')
+        status,executed=self.req(f"/api/actions/proposals/{proposal['id']}/execute",'POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(executed['item']['status'],'executed')
+        status,resource_after=self.req('/api/resources')
+        self.assertEqual(resource_after['items'][0]['quantity'],3)
+        status,replay=self.req(f"/api/actions/proposals/{proposal['id']}/execute",'POST',{})
+        self.assertEqual(status,200)
+        self.assertTrue(replay['idempotent_replay'])
+        self.assertEqual(self.req('/api/actions/proposals?status=pending')[1]['count'],0)
+
+    def test_automation_rules_reject_unknown_actions_and_bad_keys(self):
+        self.assertEqual(self.req('/api/automation/rules','POST',{'rule_key':'unsafe','name':'Unsafe','trigger_type':'manual','action_type':'run_shell','action':{},'enabled':True})[0],400)
+        self.assertEqual(self.req('/api/automation/rules','POST',{'rule_key':'bad key','name':'Bad key','trigger_type':'manual','action_type':'create_task','action':{},'enabled':True})[0],400)
+        self.assertEqual(self.req('/api/automation/rules','POST',{'rule_key':'manual-adjust','name':'Manual adjust','trigger_type':'manual','action_type':'adjust_resource','action':{'quantity_delta':2},'enabled':True})[0],400)
+
+    def test_task_dependencies_roundtrip_remaps_both_task_ids(self):
+        _,first=self.req('/api/tasks','POST',{'title':'Abhängigkeit A'})
+        _,second=self.req('/api/tasks','POST',{'title':'Abhängigkeit B'})
+        first_id,second_id=first['item']['id'],second['item']['id']
+        status,created=self.req(f'/api/tasks/{first_id}/dependencies','POST',{'depends_on_task_id':second_id})
+        self.assertEqual(status,201)
+        payload=self.req('/api/export')[1]
+        self.assertEqual(len(payload['task_dependencies']),1)
+        payload['tasks'][0]['id']=70101
+        payload['tasks'][1]['id']=70102
+        payload['task_dependencies'][0]['task_id']=70101
+        payload['task_dependencies'][0]['depends_on_task_id']=70102
+        status,result=self.req('/api/import','POST',{'data':payload})
+        self.assertEqual(status,200,result)
+        with app.db_connect() as con:
+            tasks=con.execute('SELECT id,title FROM tasks ORDER BY id').fetchall()
+            deps=con.execute('SELECT * FROM task_dependencies').fetchall()
+            self.assertEqual(con.execute('PRAGMA foreign_key_check').fetchall(),[])
+        ids_by_title={row['title']:row['id'] for row in tasks}
+        self.assertNotEqual(ids_by_title['Abhängigkeit A'],70101)
+        self.assertNotEqual(ids_by_title['Abhängigkeit B'],70102)
+        self.assertEqual(len(deps),1)
+        self.assertEqual((deps[0]['task_id'],deps[0]['depends_on_task_id']),(ids_by_title['Abhängigkeit A'],ids_by_title['Abhängigkeit B']))
+
+    def test_task_schedule_fields_and_dependency_cycle_protection(self):
+        status,first=self.req('/api/tasks','POST',{'title':'Erste Aufgabe','due_at':'2027-01-10','priority':5,'estimated_minutes':45,'recurrence':{'frequency':'weekly','interval':2,'days_of_week':[0,3]},'blocked_reason':'Wartet auf Material'})
+        self.assertEqual(status,201)
+        self.assertEqual(first['item']['priority'],5)
+        self.assertEqual(first['item']['recurrence']['frequency'],'weekly')
+        self.assertEqual(first['item']['blocked_reason'],'Wartet auf Material')
+        status,second=self.req('/api/tasks','POST',{'title':'Zweite Aufgabe'})
+        self.assertEqual(status,201)
+        status,third=self.req('/api/tasks','POST',{'title':'Dritte Aufgabe'})
+        self.assertEqual(status,201)
+        first_id,second_id,third_id=first['item']['id'],second['item']['id'],third['item']['id']
+        self.assertEqual(self.req('/api/tasks','POST',{'title':'Ungültige Priorität','priority':6})[0],400)
+        self.assertEqual(self.req('/api/tasks','POST',{'title':'Ungültiges Datum','due_at':'nächstes Jahr'})[0],400)
+        self.assertEqual(self.req(f'/api/tasks/{first_id}/dependencies','POST',{'depends_on_task_id':second_id})[0],201)
+        self.assertEqual(self.req(f'/api/tasks/{second_id}/dependencies','POST',{'depends_on_task_id':third_id})[0],201)
+        self.assertEqual(self.req(f'/api/tasks/{third_id}/dependencies','POST',{'depends_on_task_id':first_id})[0],409)
+        status,deps=self.req(f'/api/tasks/{first_id}/dependencies')
+        self.assertEqual(status,200)
+        self.assertEqual(deps['items'][0]['depends_on_task_id'],second_id)
+        self.assertEqual(self.req(f'/api/tasks/{first_id}/dependencies','POST',{'depends_on_task_id':second_id})[0],409)
+        status,edited=self.req(f'/api/tasks/{first_id}','PATCH',{'due_at':None,'priority':2,'actual_minutes':30,'recurrence':{}})
+        self.assertEqual(status,200)
+        self.assertIsNone(edited['item']['due_at'])
+        self.assertEqual(edited['item']['priority'],2)
+        self.assertEqual(edited['item']['actual_minutes'],30)
+        self.assertEqual(edited['item']['recurrence'],{})
+        dep_id=deps['items'][0]['id']
+        self.assertEqual(self.req('/api/task-dependencies/'+str(dep_id),'DELETE')[0],200)
+        self.assertEqual(self.req(f'/api/tasks/{first_id}/dependencies')[1]['items'],[])
+
+    def test_resource_policy_alerts_are_idempotent_and_resolve(self):
+        _,created=self.req('/api/resources','POST',{'name':'Mindestbestand-Test','quantity':2,'unit':'Kisten'})
+        resource_id=created['item']['id']
+        status,policy=self.req(f'/api/resources/{resource_id}/policy')
+        self.assertEqual(status,200)
+        self.assertEqual(policy['policy']['minimum_quantity'],0)
+        status,policy=self.req(f'/api/resources/{resource_id}/policy','PATCH',{'minimum_quantity':3,'target_quantity':10})
+        self.assertEqual(status,200)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/policy','PATCH',{'minimum_quantity':9,'target_quantity':4})[0],400)
+        status,run=self.req('/api/engine/evaluate','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(run['result']['low_stock_resources'],1)
+        self.assertEqual(run['result']['open_alerts'],1)
+        status,alerts=self.req('/api/engine/alerts?status=open')
+        self.assertEqual(status,200)
+        self.assertEqual(alerts['count'],1)
+        alert=alerts['items'][0]
+        self.assertEqual(alert['severity'],'warning')
+        self.assertIn('Mindestbestand 3',alert['message'])
+        status,again=self.req('/api/engine/evaluate','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(again['result']['open_alerts'],1)
+        status,ack=self.req(f"/api/engine/alerts/{alert['id']}/acknowledge",'POST',{})
+        self.assertEqual(status,200)
+        self.assertEqual(ack['item']['status'],'acknowledged')
+        status,receipt=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':2,'idempotency_key':'policy-test-receipt'})
+        self.assertEqual(status,201)
+        status,resolved=self.req('/api/engine/evaluate','POST',{})
+        self.assertEqual(status,201)
+        self.assertEqual(resolved['result']['alerts_resolved'],1)
+        status,items=self.req('/api/engine/alerts?status=resolved')
+        self.assertEqual(status,200)
+        self.assertEqual(items['count'],1)
+        status,status_data=self.req('/api/engine/status')
+        self.assertEqual(status,200)
+        self.assertEqual(status_data['counts']['open_alerts'],0)
+
+    def test_resource_ledger_migrates_existing_stock_without_inventing_history(self):
+        _,created=self.req('/api/resources','POST',{'name':'Bestandsmigration','quantity':7,'unit':'Kisten'})
+        resource_id=created['item']['id']
+        with app.db_connect() as con:
+            con.execute('DROP TABLE resource_movements')
+            con.execute('DELETE FROM schema_migrations WHERE version=7')
+            app.ensure_resource_ledger_schema(con)
+            row=con.execute('SELECT * FROM resource_movements WHERE resource_id=?',(resource_id,)).fetchone()
+        self.assertEqual(row['movement_type'],'opening_balance')
+        self.assertEqual(row['quantity_delta'],7)
+        self.assertEqual(row['quantity_after'],7)
+        self.assertIn('historische Bewegungen wurden nicht rekonstruiert',row['notes'])
+
+    def test_resource_movements_are_atomic_idempotent_and_never_negative(self):
+        _,created=self.req('/api/resources','POST',{'name':'Ledger-Test','quantity':5,'unit':'Kisten'})
+        resource_id=created['item']['id']
+        with app.db_connect() as con:
+            before_count=con.execute('SELECT COUNT(*) FROM resource_movements WHERE resource_id=?',(resource_id,)).fetchone()[0]
+            app.ensure_resource_ledger_schema(con)
+            after_count=con.execute('SELECT COUNT(*) FROM resource_movements WHERE resource_id=?',(resource_id,)).fetchone()[0]
+        self.assertEqual(after_count,before_count,'Schema-Verifikation darf keinen zweiten Eröffnungsbestand erzeugen.')
+        status,receipt=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':3,'idempotency_key':'receipt-ledger-1','notes':'Lieferung'})
+        self.assertEqual(status,201)
+        self.assertEqual(receipt['resource']['quantity'],8)
+        status,replayed=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':3,'idempotency_key':'receipt-ledger-1','notes':'Lieferung'})
+        self.assertEqual(status,200)
+        self.assertTrue(replayed['idempotent_replay'])
+        self.assertEqual(replayed['resource']['quantity'],8)
+        status,consumed=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'consumption','quantity':2,'idempotency_key':'consume-ledger-1'})
+        self.assertEqual(status,201)
+        self.assertEqual(consumed['resource']['quantity'],6)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'consumption','quantity':7,'idempotency_key':'consume-ledger-too-much'})[0],400)
+        status,adjustment=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'adjustment','quantity_delta':-1,'idempotency_key':'adjust-ledger-1'})
+        self.assertEqual(status,201)
+        self.assertEqual(adjustment['resource']['quantity'],5)
+        status,items=self.req(f'/api/resources/{resource_id}/movements')
+        self.assertEqual(status,200)
+        self.assertEqual([x['movement_type'] for x in reversed(items['items'])],['opening_balance','receipt','consumption','adjustment'])
+        self.assertEqual(items['items'][-1]['quantity_after'],5)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':2,'idempotency_key':'receipt-ledger-1'})[0],409)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':1e12,'idempotency_key':'overflow-ledger'})[0],400)
+        self.assertEqual(self.req('/api/resources')[1]['items'][0]['quantity'],5)
+
+    def test_event_journal_tracks_changes_and_replays_by_cursor(self):
+        _,initial=self.req('/api/events')
+        cursor=initial['latest_event_id']
+        status,created=self.req('/api/tasks','POST',{'title':'Journal-Test'})
+        self.assertEqual(status,201)
+        task_id=created['item']['id']
+        self.assertEqual(self.req('/api/tasks/'+str(task_id),'PATCH',{'done':True})[0],200)
+        self.assertEqual(self.req('/api/tasks/'+str(task_id),'DELETE')[0],200)
+        status,batch=self.req('/api/events?since='+str(cursor)+'&limit=100')
+        self.assertEqual(status,200)
+        self.assertFalse(batch['reset_required'])
+        changes=[event for event in batch['events'] if event['entity_type']=='task' and event['entity_id']==str(task_id)]
+        self.assertEqual([event['event_type'] for event in changes],['created','updated','deleted'])
+        self.assertTrue(all(event['payload']=={'id':task_id} for event in changes))
+        self.assertEqual([event['event_id'] for event in changes],sorted(event['event_id'] for event in changes))
+        status,first=self.req('/api/events?since='+str(cursor)+'&limit=1')
+        self.assertEqual(status,200)
+        self.assertEqual(len(first['events']),1)
+        status,next_page=self.req('/api/events?since='+str(first['events'][0]['event_id'])+'&limit=1')
+        self.assertEqual(status,200)
+        self.assertEqual(len(next_page['events']),1)
+        with app.db_connect() as con:
+            self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=6').fetchone())
+
+    def test_event_journal_reports_replay_gap(self):
+        self.req('/api/tasks','POST',{'title':'Journal-Gap-1'})
+        self.req('/api/tasks','POST',{'title':'Journal-Gap-2'})
+        with app.db_connect() as con:
+            first=con.execute('SELECT MIN(event_id) AS id FROM event_journal').fetchone()['id']
+            con.execute('DELETE FROM event_journal WHERE event_id=?',(first,))
+        status,batch=self.req('/api/events?since=0')
+        self.assertEqual(status,200)
+        self.assertTrue(batch['reset_required'])
+        self.assertEqual(batch['cursor'],batch['latest_event_id'])
+        self.assertEqual(batch['events'],[])
+        # A cursor newer than the restored database's latest event also requires a snapshot reset.
+        status,ahead=self.req('/api/events?since='+str(batch['latest_event_id']+5))
+        self.assertEqual(status,200)
+        self.assertTrue(ahead['reset_required'])
+        self.assertEqual(ahead['cursor'],ahead['latest_event_id'])
+
+    def test_sse_replays_committed_events_to_multiple_clients_and_streams_new_events(self):
+        status,created=self.req('/api/tasks','POST',{'title':'SSE-Replay-Baseline'})
+        self.assertEqual(status,201)
+        def stream_request(cursor):
+            return Request(self.base+'/api/events/stream?since='+str(cursor),headers={'Accept':'text/event-stream','Last-Event-ID':str(cursor)})
+        def read_sse_event(response):
+            lines=[]
+            while True:
+                line=response.readline()
+                self.assertTrue(line,'SSE stream closed before delivering the expected event.')
+                if line in (b'\n',b'\r\n'):break
+                if line.startswith(b':'):continue
+                lines.append(line.decode('utf-8').rstrip('\r\n'))
+            return lines
+        with urlopen(stream_request(0),timeout=5) as first, urlopen(stream_request(0),timeout=5) as second:
+            self.assertEqual(first.headers.get_content_type(),'text/event-stream')
+            self.assertEqual(second.headers.get_content_type(),'text/event-stream')
+            replay_one=read_sse_event(first);replay_two=read_sse_event(second)
+            self.assertEqual(replay_one[0],replay_two[0])
+            self.assertEqual(replay_one[1],'event: change')
+            baseline=json.loads(next(line[6:] for line in replay_one if line.startswith('data: ')))
+            self.assertEqual(baseline['entity_type'],'task')
+            self.assertEqual(baseline['payload'],{'id':created['item']['id']})
+            cursor=int(replay_one[0].split(':',1)[1].strip())
+        with urlopen(stream_request(cursor),timeout=5) as first, urlopen(stream_request(cursor),timeout=5) as second:
+            status,live=self.req('/api/tasks','POST',{'title':'SSE-Live-Update'})
+            self.assertEqual(status,201)
+            live_one=read_sse_event(first);live_two=read_sse_event(second)
+            self.assertEqual(live_one[0],live_two[0])
+            self.assertGreater(int(live_one[0].split(':',1)[1].strip()),cursor)
+            event=json.loads(next(line[6:] for line in live_one if line.startswith('data: ')))
+            self.assertEqual(event['entity_type'],'task')
+            self.assertEqual(event['payload'],{'id':live['item']['id']})
+
+    def test_event_journal_retention_is_bounded_and_configurable(self):
+        status,settings=self.req('/api/settings')
+        self.assertEqual(status,200)
+        self.assertEqual(settings['settings']['event_retention_count'],'100000')
+        with app.db_connect() as con:
+            for i in range(1005):
+                con.execute("""INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
+                    VALUES(?,?,'test',?,'created','{}',1)""",(f'retention-test-{i}',app.utcnow(),str(i)))
+            self.assertEqual(con.execute('SELECT COUNT(*) AS n FROM event_journal').fetchone()['n'],1005)
+        status,updated=self.req('/api/settings','PATCH',{'event_retention_count':'1000'})
+        self.assertEqual(status,200)
+        self.assertEqual(updated['settings']['event_retention_count'],'1000')
+        with app.db_connect() as con:
+            count=con.execute('SELECT COUNT(*) AS n FROM event_journal').fetchone()['n']
+            bounds=con.execute('SELECT MIN(event_id) AS first,MAX(event_id) AS last FROM event_journal').fetchone()
+            self.assertLessEqual(count,1000)
+            self.assertEqual(bounds['last']-bounds['first']+1,count)
+            batch=app.read_event_batch(con,0)
+            self.assertTrue(batch['reset_required'])
+            self.assertEqual(batch['cursor'],batch['latest_event_id'])
+
+    def test_event_retention_setting_is_range_validated(self):
+        self.assertEqual(self.req('/api/settings','PATCH',{'event_retention_count':'10'})[0],200)
+        self.assertEqual(self.req('/api/settings','PATCH',{'event_retention_count':'10'})[1]['settings']['event_retention_count'],'1000')
+        self.assertEqual(self.req('/api/settings','PATCH',{'event_retention_count':'not-a-number'})[0],400)
+
+    def test_restore_from_pre_journal_backup_reinstalls_additive_schema(self):
+        with app.db_connect() as con:
+            # Simulate a genuine pre-journal database, not a table dropped beneath live triggers.
+            for trigger in con.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'event_%'").fetchall():
+                con.execute('DROP TRIGGER IF EXISTS "'+trigger['name'].replace('"','""')+'"')
+            con.execute('DROP TABLE event_journal')
+            con.execute('DROP TABLE resource_movements')
+            con.execute('DROP TABLE resource_policies')
+            con.execute('DROP TABLE alerts')
+            con.execute('DROP TABLE engine_runs')
+            con.execute('DELETE FROM schema_migrations WHERE version IN (6,7,8)')
+        legacy=app.create_backup('legacy-journal-test')
+        status,result=self.req('/api/restore','POST',{'name':legacy['name']})
+        self.assertEqual(status,200,result)
+        status,batch=self.req('/api/events')
+        self.assertEqual(status,200)
+        self.assertFalse(batch['reset_required'])
+        with app.db_connect() as con:
+            self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=6').fetchone())
+            self.assertIsNotNone(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_journal'").fetchone())
+            self.assertIsNotNone(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='resource_movements'").fetchone())
+            self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=7').fetchone())
+
+
     def test_active_instance_requires_matching_user_data_directory(self):
         health={'ok':True,'app':'KOR-NEXUS','version':'1.20.0','data_dir':str(app.DATA_HOME)}
         with patch('core.server.urllib.request.urlopen',return_value=FakeResponse(json.dumps(health).encode('utf-8'))):
@@ -189,6 +626,8 @@ class CoreApiTests(unittest.TestCase):
         _, task=self.req('/api/tasks','POST',{'title':'Portabilitätsaufgabe','area':'Atlas'})
         _, unit=self.req('/api/units','POST',{'name':'Mira','role':'Logistik','status':'aktiv','biography':'Profilbiografie','region':'Hessen','tags':['Erste Hilfe']})
         _, resource=self.req('/api/resources','POST',{'name':'Feldfunkgerät','category':'Kommunikation','quantity':4,'unit':'Stück','location':'Depot Nord','notes':'Funktionsfähig'})
+        self.req(f"/api/resources/{resource['item']['id']}/policy",'PATCH',{'minimum_quantity':2,'target_quantity':9})
+        self.req('/api/automation/rules','POST',{'rule_key':'portable-rule','name':'Portable rule','trigger_type':'resource_low_stock','action_type':'create_task','action':{'title_prefix':'Nachbestellen: '},'enabled':True})
         _, assignment=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'unit_id':unit['item']['id'],'quantity':2,'notes':'Einsatzteam'})
         _, resource_assignment=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'resource_id':resource['item']['id'],'quantity':1,'notes':'Materialpaket'})
         with app.db_connect() as con:
@@ -200,16 +639,23 @@ class CoreApiTests(unittest.TestCase):
         self.req('/api/geodata/germany-states','POST',{'geojson':geo})
         exported=self.req('/api/export')[1]
         self.assertEqual(exported['schema_version'],2)
-        for key in ('tasks','records','map_locations','units','resources','project_assignments','settings','geodata','news'):
+        for key in ('tasks','records','map_locations','units','resources','resource_movements','resource_policies','project_assignments','settings','geodata','news'):
             self.assertIn(key,exported)
         self.assertEqual(exported['units'][0]['biography'],'Profilbiografie')
         self.assertEqual(len(exported['project_assignments']),2)
+        self.assertGreaterEqual(len(exported['resource_movements']),1)
+        self.assertEqual(exported['resource_policies'][0]['minimum_quantity'],2)
+        self.assertEqual(len(exported['automation_rules']),1)
+        self.assertTrue(bool(exported['automation_rules'][0]['enabled']))
         self.assertEqual(len(exported['news']['items']),1)
         # Simulate IDs from an unrelated SQLite database; all foreign keys are rewritten through the export map.
         exported['records'][0]['id']=88001
         exported['tasks'][0]['id']=77001
         exported['units'][0]['id']=66001
         exported['resources'][0]['id']=55001
+        for movement in exported.get('resource_movements',[]):
+            if movement.get('resource_id') is not None: movement['resource_id']=55001
+        for policy in exported.get('resource_policies',[]): policy['resource_id']=55001
         for item in exported['project_assignments']:
             item['project_id']=88001
             if item.get('unit_id') is not None: item['unit_id']=66001
@@ -241,7 +687,35 @@ class CoreApiTests(unittest.TestCase):
         self.assertIn('Einsatzteam',[a['notes'] for a in fresh['project_assignments']])
         self.assertIn('Materialpaket',[a['notes'] for a in fresh['project_assignments']])
         self.assertEqual(fresh['news']['items'][0]['title'],'Testmeldung')
+        self.assertGreaterEqual(len(fresh['resource_movements']),1)
+        self.assertEqual(fresh['resource_movements'][0]['resource_id'],new_resource)
+        self.assertEqual(fresh['resource_policies'][0]['resource_id'],new_resource)
+        self.assertEqual(fresh['resource_policies'][0]['minimum_quantity'],2)
+        self.assertEqual(fresh['resource_policies'][0]['target_quantity'],9)
         self.assertEqual(fresh['map_locations'][0]['task_id'],new_task)
+        imported_rules=self.req('/api/automation/rules')[1]['items']
+        self.assertEqual(len(imported_rules),1)
+        self.assertFalse(imported_rules[0]['enabled'],'Importierte Regeln müssen aus Sicherheitsgründen deaktiviert sein.')
+
+    def test_schema2_without_optional_ledger_fields_remains_importable(self):
+        _,resource=self.req('/api/resources','POST',{'name':'Altes Exportformat','quantity':6,'unit':'Kisten'})
+        payload=self.req('/api/export')[1]
+        payload.pop('resource_movements',None)
+        payload.pop('resource_policies',None)
+        payload.pop('automation_rules',None)
+        self.req('/api/automation/rules','POST',{'rule_key':'keep-local-rule','name':'Lokale Regel','trigger_type':'manual','action_type':'create_task','action':{'title_prefix':'Test'},'enabled':False})
+        status,result=self.req('/api/import','POST',{'data':payload})
+        self.assertEqual(status,200,result)
+        imported=self.req('/api/resources')[1]['items'][0]
+        status,movements=self.req(f"/api/resources/{imported['id']}/movements")
+        self.assertEqual(status,200)
+        self.assertEqual(len(movements['items']),1)
+        self.assertEqual(movements['items'][0]['movement_type'],'import_snapshot')
+        status,policy=self.req(f"/api/resources/{imported['id']}/policy")
+        self.assertEqual(status,200)
+        self.assertEqual(policy['policy']['minimum_quantity'],0)
+        self.assertIsNone(policy['policy']['target_quantity'])
+        self.assertEqual(self.req('/api/automation/rules')[1]['count'],1,'Alte Schema-2-Dateien ohne Regelfeld dürfen lokale Regeln nicht löschen.')
 
     def test_portable_import_rejects_unsafe_news_links(self):
         self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})

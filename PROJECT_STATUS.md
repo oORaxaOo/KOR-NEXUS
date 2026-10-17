@@ -1,6 +1,24 @@
 # Projektstatus — KOR-NEXUS
 
-Stand: 2026-10-16 · Version 1.20.0 · Schwerpunkt: Repository-Wiederherstellung, Ordnung und Release-Verifikation
+Stand: 2026-10-17 · Version 1.20.0 · Schwerpunkt: Core Engine, Live-Updates und sichere lokale Automatisierung
+
+## Aktueller Arbeitsstand — `transfer/kor-nexus-1.20.0`
+
+- [x] Additives SQLite-Ereignisjournal mit Änderungs-Triggern, REST-Replay, SSE-Stream, Polling-Rückfall und Reset bei Replay-Lücken.
+- [x] Begrenzte Journal-Aufbewahrung mit konfigurierbarem Umfang von 1.000 bis 1.000.000 Ereignissen; Änderung über Systemeinstellungen, sofortige Bereinigung und getesteter Reset für ältere Cursor.
+- [x] Ressourcen-Bewegungsledger mit idempotenten Buchungen, Ausgangsbeständen für Altdaten, Bestandsrichtlinien und deterministischen Warnungen.
+- [x] Aufgaben-Fälligkeiten, Prioritäten und Abhängigkeiten mit Zyklusprüfung; geplante Jobs und sichere, allowlist-basierte Automationen.
+- [x] Kritische Ressourcenänderungen werden als Aktionsvorschläge gespeichert und benötigen eine bestätigte Freigabe; Routinen sind idempotent.
+- [x] Core-Engine-/Automationsarbeitsbereich in der UI; optionaler in-process llama.cpp-Provider über `llama-cpp-python`, read-only Beratungs-API und KI-Panel. Standardprovider bleibt deaktiviert.
+- [x] JSON-Schema 2, Backup/Restore und ältere Datenbankstände bleiben durch additive Migrationen und Kompatibilitätstests unterstützt.
+- [x] Letzter grüner Release-Gate: Commit `69255b0` — 54 API-Tests einschließlich SSE-Replay/Live-Delivery, lokaler KI-Verträge, Konfiguration, RAM-Vorwarnung und Fallback bei nicht unterstützter RAM-Erkennung; Browser-Smoke-Test sowie nativer Arch-Paketbau und isolierter Installationstest erfolgreich ([Workflow](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39035192522)).
+- [ ] Ein echtes GGUF-Modell wurde nicht in CI geladen; die KI-Provider-Tests nutzen ein kontrolliertes Fake-Modell, damit kein großes Modell und keine externe KI erforderlich sind.
+- [x] Optionale llama.cpp-Laufzeit nach Stabilisierung des Kerns integriert; manuelle GGUF-Auswahl, isolierte Python-Umgebung und lokale JSON-Konfiguration. Kein automatischer Modell-Download.
+- [ ] Reale Modell-Lade- und Hardwareprüfung steht aus; CI verwendet ausschließlich einen Fake-Provider. Ein Modellmanager und eine genaue Abschätzung von KV-Cache-/Backend-Speicher bleiben offen; die aktuelle Prüfung vergleicht nur GGUF-Dateigröße mit aktuell verfügbarem RAM.
+- [x] Client wechselt nach Polling-Fallback periodisch zurück zu SSE, dedupliziert Ereignisse und setzt den Cursor bei einem Reset auch nach einer Datenbankwiederherstellung korrekt zurück.
+- [x] Ende-zu-Ende-Prüfung bestätigt Replay bereits committeter Ereignisse und Live-Delivery an zwei gleichzeitige SSE-Clients; der Client dedupliziert Events und versucht nach Polling-Fallback erneut SSE.
+- [x] Alle Änderungen bleiben auf dem Arbeitsbranch; `main` wurde nicht direkt verändert.
+
 
 ## Release 1.20.0 — Repository-Transfer und Qualitätsprüfung
 

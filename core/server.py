@@ -6,6 +6,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+if __package__:
+    from .ai_provider import AIUnavailableError, configured_ai_provider
+    from .engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
+else:
+    from ai_provider import AIUnavailableError, configured_ai_provider
+    from engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
+
+AI_PROVIDER = configured_ai_provider()
+
+
+
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +74,234 @@ def db_connect():
     return con
 
 
+
+def ensure_resource_ledger_schema(con):
+    """Add an auditable stock-movement ledger and snapshot legacy quantities once."""
+    ledger_existed=con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='resource_movements'").fetchone() is not None
+    migration_applied=con.execute('SELECT 1 FROM schema_migrations WHERE version=7').fetchone() is not None
+    con.execute("""CREATE TABLE IF NOT EXISTS resource_movements(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id INTEGER REFERENCES resources(id) ON DELETE SET NULL,
+        resource_name TEXT NOT NULL,
+        movement_type TEXT NOT NULL CHECK(movement_type IN ('opening_balance','receipt','consumption','adjustment','import_snapshot','reversal')),
+        quantity_delta REAL NOT NULL CHECK(quantity_delta BETWEEN -1000000000000 AND 1000000000000),
+        quantity_after REAL NOT NULL CHECK(quantity_after BETWEEN 0 AND 1000000000000),
+        unit TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        idempotency_key TEXT NOT NULL UNIQUE,
+        reverses_movement_id INTEGER REFERENCES resource_movements(id) ON DELETE RESTRICT,
+        created_at TEXT NOT NULL
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_resource_movements_resource ON resource_movements(resource_id,id DESC)')
+    # Seed only on first installation of the ledger or when upgrading a legacy database.
+    # Re-running this helper after a normal restore must never duplicate opening balances.
+    if not ledger_existed or not migration_applied:
+        con.execute("""INSERT OR IGNORE INTO resource_movements
+            (resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at)
+            SELECT id,name,'opening_balance',quantity,quantity,unit,
+                   'Eröffnungsbestand bei Einführung des Bewegungsjournals; historische Bewegungen wurden nicht rekonstruiert.',
+                   'migration-v7-opening-' || id,updated_at
+            FROM resources""")
+
+
+
+def ensure_engine_schema(con):
+    """Create deterministic engine monitoring tables and default stock policies."""
+    con.execute("""CREATE TABLE IF NOT EXISTS resource_policies(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id INTEGER NOT NULL UNIQUE REFERENCES resources(id) ON DELETE CASCADE,
+        minimum_quantity REAL NOT NULL DEFAULT 0 CHECK(minimum_quantity BETWEEN 0 AND 1000000000000),
+        target_quantity REAL CHECK(target_quantity IS NULL OR (target_quantity >= minimum_quantity AND target_quantity <= 1000000000000)),
+        updated_at TEXT NOT NULL
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_resource_policies_resource ON resource_policies(resource_id)')
+    con.execute("""CREATE TABLE IF NOT EXISTS alerts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_key TEXT NOT NULL UNIQUE,
+        severity TEXT NOT NULL CHECK(severity IN ('info','warning','critical')),
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id TEXT,
+        status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','acknowledged','resolved')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        resolved_at TEXT
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status,updated_at DESC)')
+    con.execute("""CREATE TABLE IF NOT EXISTS engine_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        status TEXT NOT NULL CHECK(status IN ('running','completed','failed')),
+        summary_json TEXT NOT NULL DEFAULT '{}'
+    )""")
+    con.execute("""INSERT OR IGNORE INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at)
+        SELECT id,0,NULL,updated_at FROM resources""")
+
+
+
+def ensure_task_engine_schema(con):
+    """Add schedule fields and a cycle-safe dependency graph without rewriting tasks."""
+    existing={row['name'] for row in con.execute('PRAGMA table_info(tasks)')}
+    columns={
+        'due_at':'TEXT',
+        'priority':'INTEGER NOT NULL DEFAULT 3 CHECK(priority BETWEEN 1 AND 5)',
+        'estimated_minutes':'INTEGER CHECK(estimated_minutes IS NULL OR estimated_minutes BETWEEN 0 AND 10000000)',
+        'actual_minutes':'INTEGER CHECK(actual_minutes IS NULL OR actual_minutes BETWEEN 0 AND 10000000)',
+        'recurrence_json':"TEXT NOT NULL DEFAULT '{}'",
+        'blocked_reason':"TEXT NOT NULL DEFAULT ''"
+    }
+    for name,definition in columns.items():
+        if name not in existing: con.execute(f'ALTER TABLE tasks ADD COLUMN {name} {definition}')
+    con.execute("""CREATE TABLE IF NOT EXISTS task_dependencies(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        depends_on_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        dependency_type TEXT NOT NULL DEFAULT 'finish_to_start' CHECK(dependency_type='finish_to_start'),
+        created_at TEXT NOT NULL,
+        UNIQUE(task_id,depends_on_task_id),
+        CHECK(task_id<>depends_on_task_id)
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id,depends_on_task_id)')
+
+
+
+def ensure_automation_schema(con):
+    """Install an allowlisted automation registry and explicit critical-action proposals."""
+    con.execute("""CREATE TABLE IF NOT EXISTS automation_rules(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_key TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+        trigger_type TEXT NOT NULL CHECK(trigger_type IN ('manual','resource_low_stock','task_overdue','task_blocked')),
+        action_type TEXT NOT NULL CHECK(action_type IN ('create_task','adjust_resource')),
+        action_json TEXT NOT NULL DEFAULT '{}',
+        risk_level TEXT NOT NULL CHECK(risk_level IN ('routine','critical')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS automation_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER REFERENCES automation_rules(id) ON DELETE SET NULL,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        trigger_entity_type TEXT NOT NULL,
+        trigger_entity_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('executed','proposal_created','failed')),
+        result_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS action_proposals(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        action_type TEXT NOT NULL CHECK(action_type='adjust_resource'),
+        payload_json TEXT NOT NULL,
+        risk_level TEXT NOT NULL CHECK(risk_level='critical'),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','executed','failed')),
+        rationale TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        executed_at TEXT,
+        result_json TEXT NOT NULL DEFAULT '{}'
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS scheduled_jobs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_key TEXT NOT NULL UNIQUE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('engine_evaluate','run_automations')),
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        due_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed','cancelled')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        result_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+    job_columns={row['name'] for row in con.execute('PRAGMA table_info(scheduled_jobs)')}
+    if 'result_json' not in job_columns: con.execute("ALTER TABLE scheduled_jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
+    con.execute("UPDATE scheduled_jobs SET status='pending',last_error='Wiederaufnahme nach Prozessneustart',updated_at=? WHERE status='running'",(utcnow(),))
+    con.execute('CREATE INDEX IF NOT EXISTS idx_automation_rules_enabled ON automation_rules(enabled,trigger_type)')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_action_proposals_status ON action_proposals(status,created_at DESC)')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_due ON scheduled_jobs(status,due_at)')
+
+
+def prune_event_journal(con):
+    """Apply the configured bounded retention window to the ephemeral replay journal."""
+    row=con.execute("SELECT value FROM settings WHERE key='event_retention_count'").fetchone()
+    try: keep=max(1000,min(1000000,int(row['value']) if row else 100000))
+    except (TypeError,ValueError): keep=100000
+    latest=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()['value'] or 0
+    cutoff=int(latest)-keep
+    if cutoff>0: con.execute('DELETE FROM event_journal WHERE event_id<=?',(cutoff,))
+    return keep
+
+
+def ensure_event_journal_schema(con):
+    """Install the additive change journal and triggers without rewriting user data."""
+    con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_uuid TEXT NOT NULL UNIQUE,
+        occurred_at TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK(event_type IN ('created','updated','deleted')),
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        schema_version INTEGER NOT NULL DEFAULT 1
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
+    con.execute("INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES('event_retention_count','100000',?)",(utcnow(),))
+    con.execute("""CREATE TRIGGER IF NOT EXISTS event_journal_retention
+        AFTER INSERT ON event_journal
+        BEGIN
+          DELETE FROM event_journal
+          WHERE event_id <= NEW.event_id - MAX(1000,MIN(1000000,COALESCE(
+              (SELECT CAST(value AS INTEGER) FROM settings WHERE key='event_retention_count'),100000)));
+        END""")
+    entities = [
+        ('tasks','task'),('task_dependencies','task_dependency'),('automation_rules','automation_rule'),('automation_runs','automation_run'),('action_proposals','action_proposal'),('scheduled_jobs','scheduled_job'),('records','record'),('units','unit'),
+        ('resources','resource'),('resource_movements','resource_movement'),('resource_policies','resource_policy'),('alerts','alert'),('engine_runs','engine_run'),('project_assignments','assignment'),
+        ('map_locations','location')
+    ]
+    for table, entity in entities:
+        for operation, event_type in [('INSERT','created'),('UPDATE','updated'),('DELETE','deleted')]:
+            alias = 'OLD' if operation == 'DELETE' else 'NEW'
+            trigger = f'event_{table}_{operation.lower()}'
+            con.execute(f"""CREATE TRIGGER IF NOT EXISTS {trigger}
+                AFTER {operation} ON {table}
+                BEGIN
+                  INSERT INTO event_journal(event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version)
+                  VALUES(lower(hex(randomblob(16))),strftime('%Y-%m-%dT%H:%M:%fZ','now'),'{entity}',
+                         CAST({alias}.id AS TEXT),'{event_type}','{{"id":' || {alias}.id || '}}',1);
+                END""")
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(7,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(9,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(10,?)',(utcnow(),))
+    prune_event_journal(con)
+
+
+def read_event_batch(con, since, limit=100):
+    """Read a bounded journal page and explicitly report when replay has a gap."""
+    oldest_row=con.execute('SELECT MIN(event_id) AS value FROM event_journal').fetchone()
+    latest_row=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()
+    oldest=oldest_row['value'] or 0
+    latest=latest_row['value'] or 0
+    if (oldest and since < oldest - 1) or since > latest:
+        return {'events':[],'cursor':latest,'latest_event_id':latest,'reset_required':True}
+    rows=con.execute('SELECT event_id,event_uuid,occurred_at,entity_type,entity_id,event_type,payload_json,schema_version FROM event_journal WHERE event_id>? ORDER BY event_id LIMIT ?',(since,limit)).fetchall()
+    events=[]
+    for row in rows:
+        item=dict(row)
+        try:item['payload']=json.loads(item.pop('payload_json'))
+        except (ValueError,TypeError):item['payload']={}
+        events.append(item)
+    cursor=events[-1]['event_id'] if events else since
+    return {'events':events,'cursor':cursor,'latest_event_id':latest,'reset_required':False}
+
+
 def initialize():
     global _last_backup_monotonic
     DATA_HOME.mkdir(parents=True, exist_ok=True, mode=0o700); BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -103,6 +342,11 @@ def initialize():
         con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)',(utcnow(),))
         for k,v in [('language','de'),('backup_keep',str(BACKUP_KEEP)),('backup_interval_minutes','30'),('last_news_refresh',''),('unit_label_singular','Mitglied'),('unit_label_plural','Mitglieder')]:
             con.execute('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)',(k,v,utcnow()))
+        ensure_resource_ledger_schema(con)
+        ensure_engine_schema(con)
+        ensure_task_engine_schema(con)
+        ensure_automation_schema(con)
+        ensure_event_journal_schema(con)
         con.commit()
     try: os.chmod(DB_PATH, 0o600)
     except OSError: pass
@@ -175,7 +419,100 @@ def maybe_backup():
 def unit_dict(r):
     d=dict(r); d['tags']=json.loads(d.get('tags') or '[]'); return d
 
-def task_dict(r): return {'id':r['id'],'title':r['title'],'area':r['area'],'done':bool(r['done']),'created_at':r['created_at'],'updated_at':r['updated_at']}
+def normalize_task_schedule(data, old=None):
+    def value(key, default=None): return data[key] if key in data else (old[key] if old is not None else default)
+    due=value('due_at')
+    if due in ('',None): due=None
+    else:
+        due=str(due).strip()
+        try: dt.date.fromisoformat(due)
+        except ValueError: raise ValueError('Fälligkeitsdatum muss im Format JJJJ-MM-TT vorliegen.')
+    try: priority=int(value('priority',3))
+    except (TypeError,ValueError): raise ValueError('Priorität muss eine ganze Zahl von 1 bis 5 sein.')
+    if priority<1 or priority>5: raise ValueError('Priorität muss zwischen 1 und 5 liegen.')
+    def optional_minutes(key):
+        raw=value(key)
+        if raw in ('',None): return None
+        try: minutes=int(raw)
+        except (TypeError,ValueError): raise ValueError(f'{key} muss eine ganze Zahl sein.')
+        if minutes<0 or minutes>10000000: raise ValueError(f'{key} muss zwischen 0 und 10.000.000 liegen.')
+        return minutes
+    estimated=optional_minutes('estimated_minutes')
+    actual=optional_minutes('actual_minutes')
+    if 'recurrence' in data:
+        recurrence=data['recurrence']
+    elif old is not None:
+        try: recurrence=json.loads(old['recurrence_json'] or '{}')
+        except (ValueError,TypeError): recurrence={}
+    else: recurrence={}
+    if not isinstance(recurrence,dict): raise ValueError('Wiederholung muss ein JSON-Objekt sein.')
+    allowed={'frequency','interval','until','days_of_week'}
+    if any(key not in allowed for key in recurrence): raise ValueError('Unbekanntes Feld in der Wiederholung.')
+    if recurrence:
+        if recurrence.get('frequency') not in ('daily','weekly','monthly'): raise ValueError('Wiederholung muss daily, weekly oder monthly verwenden.')
+        try: interval=int(recurrence.get('interval',1))
+        except (TypeError,ValueError): raise ValueError('Wiederholungsintervall muss eine ganze Zahl sein.')
+        if not 1<=interval<=365: raise ValueError('Wiederholungsintervall muss zwischen 1 und 365 liegen.')
+        recurrence['interval']=interval
+        if recurrence.get('until') not in (None,''):
+            try: dt.date.fromisoformat(str(recurrence['until']))
+            except ValueError: raise ValueError('Wiederholungsende muss im Format JJJJ-MM-TT vorliegen.')
+        days=recurrence.get('days_of_week',[])
+        if not isinstance(days,list) or any(not isinstance(day,int) or isinstance(day,bool) or day<0 or day>6 for day in days): raise ValueError('Wochentage müssen Zahlen von 0 bis 6 sein.')
+    blocked=str(value('blocked_reason','') or '').strip()
+    if len(blocked)>1000: raise ValueError('Blockierungsgrund darf höchstens 1.000 Zeichen enthalten.')
+    return due,priority,estimated,actual,json.dumps(recurrence,ensure_ascii=False,separators=(',',':')),blocked
+
+
+def automation_rule_dict(row):
+    item=dict(row)
+    try: item['action']=json.loads(item.pop('action_json') or '{}')
+    except (ValueError,TypeError): item['action']={}
+    item['enabled']=bool(item['enabled'])
+    return item
+
+
+def proposal_dict(row):
+    item=dict(row)
+    try: item['payload']=json.loads(item.pop('payload_json') or '{}')
+    except (ValueError,TypeError): item['payload']={}
+    try: item['result']=json.loads(item.pop('result_json') or '{}')
+    except (ValueError,TypeError): item['result']={}
+    return item
+
+
+def normalize_automation_rule(data, old=None):
+    rule_key=str(data.get('rule_key',old['rule_key'] if old is not None else '')).strip()
+    name=str(data.get('name',old['name'] if old is not None else '')).strip()
+    trigger=str(data.get('trigger_type',old['trigger_type'] if old is not None else '')).strip()
+    action_type=str(data.get('action_type',old['action_type'] if old is not None else '')).strip()
+    if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}',rule_key): raise ValueError('rule_key muss 1–80 sichere Zeichen enthalten.')
+    if not name or len(name)>180: raise ValueError('Regelname muss zwischen 1 und 180 Zeichen lang sein.')
+    if trigger not in ('manual','resource_low_stock','task_overdue','task_blocked'): raise ValueError('Unbekannter Auslöser.')
+    if action_type not in ('create_task','adjust_resource'): raise ValueError('Aktion ist nicht freigegeben.')
+    action=data.get('action')
+    if action is None and old is not None:
+        try: action=json.loads(old['action_json'] or '{}')
+        except (ValueError,TypeError): action={}
+    if not isinstance(action,dict): raise ValueError('Aktion muss ein JSON-Objekt sein.')
+    if action_type=='create_task':
+        if any(k not in ('title_prefix','area','blocked_reason') for k in action): raise ValueError('Unbekanntes Feld für create_task.')
+        if len(str(action.get('title_prefix','')))>120 or len(str(action.get('area','Logistik')))>80 or len(str(action.get('blocked_reason','')))>1000: raise ValueError('Automatische Aufgabe enthält zu lange Felder.')
+    else:
+        if trigger!='resource_low_stock': raise ValueError('adjust_resource ist nur beim Auslöser resource_low_stock erlaubt.')
+        if any(k not in ('quantity_delta','notes') for k in action): raise ValueError('Unbekanntes Feld für adjust_resource.')
+        try: delta=float(action.get('quantity_delta'))
+        except (TypeError,ValueError): raise ValueError('quantity_delta muss eine gültige Zahl sein.')
+        if not math.isfinite(delta) or delta<=0 or delta>1e12: raise ValueError('Automatische Bestandsanpassung muss eine positive Menge bis 1e12 sein.')
+        if len(str(action.get('notes','')))>1000: raise ValueError('Notiz darf höchstens 1.000 Zeichen enthalten.')
+        action['quantity_delta']=delta
+    if len(json.dumps(action,ensure_ascii=False))>4000: raise ValueError('Automationsaktion ist zu groß.')
+    enabled=bool(data.get('enabled',old['enabled'] if old is not None else False))
+    risk='critical' if action_type=='adjust_resource' else 'routine'
+    return rule_key,name,trigger,action_type,json.dumps(action,ensure_ascii=False,separators=(',',':')),risk,int(enabled)
+
+
+def task_dict(r): return {'id':r['id'],'title':r['title'],'area':r['area'],'done':bool(r['done']),'due_at':r['due_at'],'priority':r['priority'],'estimated_minutes':r['estimated_minutes'],'actual_minutes':r['actual_minutes'],'recurrence':json.loads(r['recurrence_json'] or '{}'),'blocked_reason':r['blocked_reason'],'created_at':r['created_at'],'updated_at':r['updated_at']}
 def record_dict(r): return {'id':r['id'],'module':r['module'],'title':r['title'],'body':r['body'],'region':r['region'],'tags':json.loads(r['tags'] or '[]'),'created_at':r['created_at'],'updated_at':r['updated_at']}
 
 
@@ -310,10 +647,14 @@ def build_export(con):
         'schema_version':2,'app':APP_NAME,'exported_at':utcnow(),
         'id_policy':'IDs are identifiers inside this export only; import remaps them to new local SQLite IDs.',
         'tasks':rows('SELECT * FROM tasks ORDER BY id'),
+        'task_dependencies':rows('SELECT * FROM task_dependencies ORDER BY id'),
+        'automation_rules':rows('SELECT id,rule_key,name,enabled,trigger_type,action_type,action_json,risk_level,created_at,updated_at FROM automation_rules ORDER BY id'),
         'records':records,
         'map_locations':rows('SELECT l.*,p.title AS project_title,t.title AS task_title,u.name AS unit_name,rs.name AS resource_name FROM map_locations l LEFT JOIN records p ON p.id=l.project_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN resources rs ON rs.id=l.resource_id ORDER BY l.id'),
         'units':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id')],
         'resources':rows('SELECT * FROM resources ORDER BY id'),
+        'resource_movements':rows('SELECT id,resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,reverses_movement_id,created_at FROM resource_movements ORDER BY id'),
+        'resource_policies':rows('SELECT id,resource_id,minimum_quantity,target_quantity,updated_at FROM resource_policies ORDER BY id'),
         'project_assignments':rows('SELECT * FROM project_assignments ORDER BY id'),
         'settings':get_settings(con),
         'geodata':{('germany_states' if r['key']=='germany-states' else r['key']):json.loads(r['geojson']) for r in con.execute('SELECT key,geojson FROM geodata_assets')},
@@ -347,18 +688,39 @@ def validate_portable_import(payload):
         raise ValueError('Ungültiges oder nicht unterstütztes Importformat (unterstützt werden Schema 1 und 2).')
     version=payload['schema_version']
     names=('tasks','records','map_locations') + (('units','resources','project_assignments') if version>=2 else ())
-    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000}
+    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000,'resource_policies':50000,'task_dependencies':100000,'automation_rules':1000}
     data={}
     for name in names:
         arr=payload.get(name,[])
         if not isinstance(arr,list) or len(arr)>limits[name]: raise ValueError(f'{name}: ungültige Liste oder zu viele Einträge.')
         data[name]=arr
     if version>=2:
+        movements=payload.get('resource_movements',[])
+        if not isinstance(movements,list) or len(movements)>limits['resource_movements']: raise ValueError('resource_movements: ungültige Liste oder zu viele Einträge.')
+        data['resource_movements']=movements
+        policies=payload.get('resource_policies',[])
+        if not isinstance(policies,list) or len(policies)>limits['resource_policies']: raise ValueError('resource_policies: ungültige Liste oder zu viele Einträge.')
+        data['resource_policies']=policies
+        dependencies=payload.get('task_dependencies',[])
+        if not isinstance(dependencies,list) or len(dependencies)>limits['task_dependencies']: raise ValueError('task_dependencies: ungültige Liste oder zu viele Einträge.')
+        data['task_dependencies']=dependencies
+        rules=payload.get('automation_rules',[])
+        if not isinstance(rules,list) or len(rules)>limits['automation_rules']: raise ValueError('automation_rules: ungültige Liste oder zu viele Einträge.')
+        data['automation_rules']=rules
+        data['automation_rules_present']='automation_rules' in payload
+    else:
+        data['resource_movements']=[]
+        data['resource_policies']=[]
+        data['task_dependencies']=[]
+        data['automation_rules']=[]
+        data['automation_rules_present']=False
+    if version>=2:
         for name in ('units','resources','project_assignments'):
             if name not in payload: raise ValueError(f'Schema 2 benötigt das Feld {name}.')
     if not isinstance(payload.get('settings',{}),dict): raise ValueError('Einstellungen müssen ein JSON-Objekt sein.')
     if not isinstance(payload.get('geodata',{}),dict): raise ValueError('Geodaten müssen ein JSON-Objekt sein.')
     for key,items in data.items():
+        if not isinstance(items,list): continue
         _portable_id_map(items,key)
         if version>=2 and any(item.get('id') is None for item in items): raise ValueError(f'Schema 2 benötigt für jeden Eintrag in {key} eine Export-ID.')
     for r in data['records']:
@@ -366,6 +728,11 @@ def validate_portable_import(payload):
         if not isinstance(r.get('tags',[]),list): raise ValueError('Datensatz-Tags müssen Listen sein.')
     for t in data['tasks']:
         if not str(t.get('title','')).strip() or len(str(t.get('title','')))>180: raise ValueError('Mindestens eine Aufgabe ist ungültig.')
+        recurrence={}
+        raw_recurrence=t.get('recurrence_json','{}')
+        try: recurrence=json.loads(raw_recurrence) if isinstance(raw_recurrence,str) else raw_recurrence
+        except (ValueError,TypeError): raise ValueError('Aufgabenwiederholung ist ungültig.')
+        normalize_task_schedule({'due_at':t.get('due_at'),'priority':t.get('priority',3),'estimated_minutes':t.get('estimated_minutes'),'actual_minutes':t.get('actual_minutes'),'recurrence':recurrence,'blocked_reason':t.get('blocked_reason','')})
     for u in data.get('units',[]):
         if not str(u.get('name','')).strip() or len(str(u.get('name','')))>180 or not isinstance(u.get('tags',[]),list): raise ValueError('Mindestens ein Personenprofil ist ungültig.')
     for r in data.get('resources',[]):
@@ -381,11 +748,60 @@ def validate_portable_import(payload):
                 geom=feature.get('geometry') if isinstance(feature,dict) else None
                 if not isinstance(geom,dict) or geom.get('type') not in ('Polygon','MultiPolygon') or not geojson_wgs84_coordinates_valid(geom.get('coordinates')): raise ValueError('Importierte Bundesland-Geometrie muss Polygon/MultiPolygon in WGS84 sein.')
     # Validate explicit package-local references before touching the database.
-    ids={name:{str(x['id']) for x in items if isinstance(x,dict) and x.get('id') is not None} for name,items in data.items()}
+    ids={name:{str(x['id']) for x in items if isinstance(x,dict) and x.get('id') is not None} for name,items in data.items() if isinstance(items,list)}
     records_by_id={str(x['id']):x for x in data['records'] if x.get('id') is not None}
     tasks_by_id={str(x['id']):x for x in data['tasks'] if x.get('id') is not None}
     units_by_id={str(x['id']):x for x in data.get('units',[]) if x.get('id') is not None}
     resources_by_id={str(x['id']):x for x in data.get('resources',[]) if x.get('id') is not None}
+    seen_movement_ids=set()
+    for movement in data.get('resource_movements',[]):
+        required=('id','resource_name','movement_type','quantity_delta','quantity_after','unit','created_at')
+        if not isinstance(movement,dict) or any(field not in movement or movement[field] is None for field in required): raise ValueError('Ressourcenbewegung ist unvollständig.')
+        if movement.get('movement_type') not in ('opening_balance','receipt','consumption','adjustment','import_snapshot','reversal'): raise ValueError('Ressourcenbewegung enthält einen unbekannten Typ.')
+        try: delta=float(movement.get('quantity_delta')); after=float(movement.get('quantity_after'))
+        except (TypeError,ValueError): raise ValueError('Ressourcenbewegung enthält eine ungültige Menge.')
+        if not math.isfinite(delta) or abs(delta)>1e12 or not math.isfinite(after) or after<0 or after>1e12: raise ValueError('Ressourcenbewegung enthält eine ungültige Menge.')
+        if not str(movement.get('resource_name','')).strip() or not str(movement.get('unit','')).strip(): raise ValueError('Ressourcenbewegung benötigt Ressourcenname und Einheit.')
+        resource_ref=movement.get('resource_id')
+        if resource_ref not in (None,'') and str(resource_ref) not in ids.get('resources',set()): raise ValueError('Ressourcenbewegung verweist auf eine unbekannte Ressource.')
+        reverse_ref=movement.get('reverses_movement_id')
+        if reverse_ref not in (None,'') and str(reverse_ref) not in seen_movement_ids: raise ValueError('Rücknahme muss auf eine vorherige Ressourcenbewegung verweisen.')
+        seen_movement_ids.add(str(movement['id']))
+    for policy in data.get('resource_policies',[]):
+        if not isinstance(policy,dict) or any(field not in policy or policy[field] is None for field in ('id','resource_id','minimum_quantity','updated_at')): raise ValueError('Bestandsrichtlinie ist unvollständig.')
+        if str(policy['resource_id']) not in ids.get('resources',set()): raise ValueError('Bestandsrichtlinie verweist auf eine unbekannte Ressource.')
+        try: minimum=float(policy['minimum_quantity']); target=None if policy.get('target_quantity') in (None,'') else float(policy['target_quantity'])
+        except (TypeError,ValueError): raise ValueError('Bestandsrichtlinie enthält eine ungültige Menge.')
+        if not math.isfinite(minimum) or minimum<0 or minimum>1e12 or target is not None and (not math.isfinite(target) or target<minimum or target>1e12): raise ValueError('Bestandsrichtlinie enthält eine ungültige Menge.')
+    dependency_pairs=set()
+    dependency_graph={}
+    for dependency in data.get('task_dependencies',[]):
+        required=('id','task_id','depends_on_task_id','dependency_type','created_at')
+        if not isinstance(dependency,dict) or any(field not in dependency or dependency[field] is None for field in required): raise ValueError('Aufgabenabhängigkeit ist unvollständig.')
+        task_ref=str(dependency['task_id']); depends_ref=str(dependency['depends_on_task_id'])
+        if task_ref not in ids.get('tasks',set()) or depends_ref not in ids.get('tasks',set()): raise ValueError('Aufgabenabhängigkeit verweist auf eine unbekannte Aufgabe.')
+        if task_ref==depends_ref: raise ValueError('Eine Aufgabe kann nicht von sich selbst abhängen.')
+        if dependency.get('dependency_type')!='finish_to_start': raise ValueError('Unbekannter Abhängigkeitstyp.')
+        pair=(task_ref,depends_ref)
+        if pair in dependency_pairs: raise ValueError('Doppelte Aufgabenabhängigkeit.')
+        dependency_pairs.add(pair)
+        dependency_graph.setdefault(task_ref,[]).append(depends_ref)
+    visiting=set();visited=set()
+    def visit_dependency(node):
+        if node in visiting: raise ValueError('Aufgabenabhängigkeiten enthalten einen Zyklus.')
+        if node in visited: return
+        visiting.add(node)
+        for parent in dependency_graph.get(node,[]): visit_dependency(parent)
+        visiting.remove(node);visited.add(node)
+    for node in dependency_graph: visit_dependency(node)
+    rule_keys=set()
+    for rule in data.get('automation_rules',[]):
+        if not isinstance(rule,dict) or any(field not in rule for field in ('id','rule_key','name','trigger_type','action_type')): raise ValueError('Automationsregel ist unvollständig.')
+        if str(rule.get('rule_key')) in rule_keys: raise ValueError('Automationsregeln enthalten doppelte rule_key-Werte.')
+        rule_keys.add(str(rule.get('rule_key')))
+        try: action=json.loads(rule.get('action_json','{}')) if isinstance(rule.get('action_json','{}'),str) else rule.get('action_json',{})
+        except (ValueError,TypeError): raise ValueError('Automationsaktion ist ungültig.')
+        normalize_automation_rule({'rule_key':rule.get('rule_key'),'name':rule.get('name'),'trigger_type':rule.get('trigger_type'),'action_type':rule.get('action_type'),'action':action,'enabled':False})
     projects=_legacy_lookup([r for r in data['records'] if r.get('module')=='projects'],'title','Projekte')
     tasks=_legacy_lookup(data['tasks'],'title','Aufgaben')
     units=_legacy_lookup(data.get('units',[]),'name','Personenprofile')
@@ -461,7 +877,7 @@ def portable_import_preview(payload):
     summary={'schema_version':payload.get('schema_version') if isinstance(payload,dict) else None,
              'tasks':len(arr('tasks')),'records':len(records),'records_by_module':by_module,
              'map_locations':len(arr('map_locations')),'units':len(arr('units')),
-             'resources':len(arr('resources')),'project_assignments':len(arr('project_assignments')),
+             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'resource_policies':len(arr('resource_policies')),'task_dependencies':len(arr('task_dependencies')),'automation_rules':len(arr('automation_rules')),'project_assignments':len(arr('project_assignments')),
              'settings':len(payload.get('settings',{})) if isinstance(payload,dict) and isinstance(payload.get('settings',{}),dict) else 0,
              'geodata':len(geo),'geodata_features':sum(len(v.get('features',[])) for v in geo.values() if isinstance(v,dict) and isinstance(v.get('features'),list)),
              'news_items':len(news.get('items',[])) if isinstance(news.get('items',[]),list) else 0,
@@ -514,11 +930,33 @@ def apply_portable_import(con, payload, now):
     con.execute('BEGIN IMMEDIATE')
     con.execute('DELETE FROM map_locations'); con.execute('DELETE FROM project_assignments'); con.execute('DELETE FROM tasks'); con.execute('DELETE FROM records')
     if version>=2:
+        # Schema-2 import replaces the portable ledger too; delete newest movements first
+        # so any future reversal references are removed before their originals.
+        for movement in con.execute('SELECT id FROM resource_movements ORDER BY id DESC').fetchall():
+            con.execute('DELETE FROM resource_movements WHERE id=?',(movement['id'],))
         con.execute('DELETE FROM units'); con.execute('DELETE FROM resources')
     task_map={};record_map={};unit_map={};resource_map={}
     for t in data['tasks']:
-        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at) VALUES(?,?,?,?,?)',(str(t['title']).strip(),str(t.get('area','SYSTEM'))[:80],int(bool(t.get('done'))),str(t.get('created_at',now))[:80],str(t.get('updated_at',now))[:80]))
+        recurrence={}
+        raw_recurrence=t.get('recurrence_json','{}')
+        try: recurrence=json.loads(raw_recurrence) if isinstance(raw_recurrence,str) else raw_recurrence
+        except (ValueError,TypeError): recurrence={}
+        due,priority,estimated,actual,recurrence_json,blocked=normalize_task_schedule({'due_at':t.get('due_at'),'priority':t.get('priority',3),'estimated_minutes':t.get('estimated_minutes'),'actual_minutes':t.get('actual_minutes'),'recurrence':recurrence,'blocked_reason':t.get('blocked_reason','')})
+        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at,due_at,priority,estimated_minutes,actual_minutes,recurrence_json,blocked_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(str(t['title']).strip(),str(t.get('area','SYSTEM'))[:80],int(bool(t.get('done'))),str(t.get('created_at',now))[:80],str(t.get('updated_at',now))[:80],due,priority,estimated,actual,recurrence_json,blocked))
+
         if t.get('id') is not None: task_map[str(t['id'])]=cur.lastrowid
+    for dependency in data.get('task_dependencies',[]):
+        mapped_task=task_map.get(str(dependency['task_id']))
+        mapped_parent=task_map.get(str(dependency['depends_on_task_id']))
+        if mapped_task is None or mapped_parent is None: raise ValueError('Aufgabenabhängigkeit verweist auf eine unbekannte Aufgabe.')
+        con.execute('INSERT INTO task_dependencies(task_id,depends_on_task_id,dependency_type,created_at) VALUES(?,?,?,?)',(mapped_task,mapped_parent,'finish_to_start',str(dependency.get('created_at',now))[:80]))
+    if version>=2 and data.get('automation_rules_present'):
+        for old_rule in con.execute('SELECT id FROM automation_rules ORDER BY id DESC').fetchall():
+            con.execute('DELETE FROM automation_rules WHERE id=?',(old_rule['id'],))
+        for rule in data.get('automation_rules',[]):
+            action=json.loads(rule.get('action_json','{}')) if isinstance(rule.get('action_json','{}'),str) else rule.get('action_json',{})
+            values=normalize_automation_rule({'rule_key':rule['rule_key'],'name':rule['name'],'trigger_type':rule['trigger_type'],'action_type':rule['action_type'],'action':action,'enabled':False})
+            con.execute('INSERT INTO automation_rules(rule_key,name,enabled,trigger_type,action_type,action_json,risk_level,created_at,updated_at) VALUES(?,?,0,?,?,?,?,?,?)',(values[0],values[1],values[2],values[3],values[4],values[5],str(rule.get('created_at',now))[:80],str(rule.get('updated_at',now))[:80]))
     for r in data['records']:
         cur=con.execute('INSERT INTO records(module,title,body,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(r['module'],str(r['title']).strip(),str(r.get('body',''))[:100000],str(r.get('region',''))[:180],json.dumps(r.get('tags',[]) if isinstance(r.get('tags',[]),list) else [],ensure_ascii=False),str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
         if r.get('id') is not None: record_map[str(r['id'])]=cur.lastrowid
@@ -526,9 +964,28 @@ def apply_portable_import(con, payload, now):
         for u in data['units']:
             cur=con.execute('INSERT INTO units(name,role,status,biography,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(u['name']).strip(),str(u.get('role',''))[:120],str(u.get('status','aktiv'))[:40],str(u.get('biography',''))[:100000],str(u.get('region',''))[:180],json.dumps(u.get('tags',[]),ensure_ascii=False),str(u.get('created_at',now))[:80],str(u.get('updated_at',now))[:80]))
             if u.get('id') is not None: unit_map[str(u['id'])]=cur.lastrowid
+        movement_resource_ids={str(m.get('resource_id')) for m in data.get('resource_movements',[]) if m.get('resource_id') is not None}
         for r in data['resources']:
             cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(r['name']).strip(),str(r.get('category','Allgemein'))[:80],float(r.get('quantity',0)),str(r.get('unit','Stück'))[:40],str(r.get('location',''))[:180],str(r.get('notes',''))[:10000],str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
+            resource_row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+            con.execute('INSERT OR IGNORE INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at) VALUES(?,0,NULL,?)',(cur.lastrowid,now))
+            if str(r.get('id')) not in movement_resource_ids:
+                con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,resource_row['name'],'import_snapshot',resource_row['quantity'],resource_row['quantity'],resource_row['unit'],'Bestand aus Schema-2-Import übernommen; historische Bewegungen sind unbekannt.','import-snapshot:'+uuid.uuid4().hex,now))
             if r.get('id') is not None: resource_map[str(r['id'])]=cur.lastrowid
+        movement_map={}
+        for movement in data.get('resource_movements',[]):
+            source_resource=movement.get('resource_id')
+            mapped_resource=resource_map.get(str(source_resource)) if source_resource not in (None,'') else None
+            reverse_source=movement.get('reverses_movement_id')
+            mapped_reverse=movement_map.get(str(reverse_source)) if reverse_source not in (None,'') else None
+            cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,reverses_movement_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (mapped_resource,str(movement['resource_name'])[:180],str(movement['movement_type']),float(movement['quantity_delta']),float(movement['quantity_after']),str(movement['unit'])[:40],str(movement.get('notes',''))[:2000],'portable-import:'+uuid.uuid4().hex,mapped_reverse,str(movement['created_at'])[:80]))
+            movement_map[str(movement['id'])]=cur.lastrowid
+        for policy in data.get('resource_policies',[]):
+            mapped_resource=resource_map.get(str(policy['resource_id']))
+            if mapped_resource is None: raise ValueError('Bestandsrichtlinie verweist auf eine unbekannte Ressource.')
+            target=policy.get('target_quantity')
+            con.execute('UPDATE resource_policies SET minimum_quantity=?,target_quantity=?,updated_at=? WHERE resource_id=?',(float(policy['minimum_quantity']),None if target in (None,'') else float(target),str(policy['updated_at'])[:80],mapped_resource))
     def resolve_ref(item,field,mapping,legacy_name,lookup):
         if item.get(field) not in (None,''):
             key=str(item[field])
@@ -663,15 +1120,102 @@ class AppHandler(BaseHTTPRequestHandler):
         except Exception: raise ValueError('Ungültiges JSON')
         if not isinstance(value,dict): raise ValueError('JSON muss ein Objekt sein')
         return value
+    def stream_events(self, query):
+        raw_since=self.headers.get('Last-Event-ID') or query.get('since',['0'])[0]
+        try: cursor=max(0,int(raw_since))
+        except (TypeError,ValueError): return self.fail(400,'Ungültiger Ereignis-Cursor.')
+        self.send_response(200)
+        self.send_header('Content-Type','text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control','no-cache, no-transform')
+        self.send_header('Connection','keep-alive')
+        self.send_header('X-Accel-Buffering','no')
+        self.end_headers()
+        heartbeat=time.monotonic()
+        try:
+            while True:
+                with db_connect() as con: batch=read_event_batch(con,cursor,100)
+                if batch['reset_required']:
+                    payload=json.dumps({'cursor':batch['cursor'],'reason':'journal_gap'},separators=(',',':'))
+                    self.wfile.write(('event: reset_required\ndata: '+payload+'\n\n').encode('utf-8'))
+                    self.wfile.flush()
+                    cursor=batch['cursor']
+                for item in batch['events']:
+                    payload=json.dumps(item,ensure_ascii=False,separators=(',',':'))
+                    self.wfile.write((f"id: {item['event_id']}\nevent: change\ndata: {payload}\n\n").encode('utf-8'))
+                    cursor=item['event_id']
+                if batch['events'] or batch['reset_required']: self.wfile.flush()
+                if time.monotonic()-heartbeat>=15:
+                    self.wfile.write(b': heartbeat\n\n');self.wfile.flush();heartbeat=time.monotonic()
+                if not batch['events']: time.sleep(1)
+        except (BrokenPipeError,ConnectionResetError,OSError):
+            return
+
     def do_GET(self):
         if not self.trusted(): return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if path=='/api/events/stream': return self.stream_events(q)
         if path.startswith('/api/'):
             maybe_backup()
+            m=re.fullmatch(r'/api/resources/(\d+)/policy',path)
+            if m:
+                ident=int(m.group(1))
+                with db_connect() as con:
+                    row=con.execute('SELECT p.*,r.name AS resource_name,r.quantity AS current_quantity,r.unit FROM resource_policies p JOIN resources r ON r.id=p.resource_id WHERE p.resource_id=?',(ident,)).fetchone()
+                if not row:return self.fail(404,'Ressource oder Bestandsrichtlinie nicht gefunden.')
+                return self.send_json({'policy':dict(row)})
+            if path=='/api/engine/alerts':
+                status_filter=q.get('status',['open'])[0]
+                if status_filter not in ('open','acknowledged','resolved','all'):return self.fail(400,'Ungültiger Alert-Status.')
+                with db_connect() as con:
+                    if status_filter=='all':
+                        rows=[dict(r) for r in con.execute("SELECT * FROM alerts ORDER BY updated_at DESC,id DESC LIMIT 500")]
+                    else:
+                        rows=[dict(r) for r in con.execute('SELECT * FROM alerts WHERE status=? ORDER BY updated_at DESC,id DESC LIMIT 500',(status_filter,))]
+                return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
+            if path=='/api/engine/jobs':
+                status_filter=q.get('status',['pending'])[0]
+                if status_filter not in ('pending','running','completed','failed','cancelled','all'):return self.fail(400,'Ungültiger Job-Status.')
+                with db_connect() as con:
+                    if status_filter=='all': rows=[dict(r) for r in con.execute('SELECT * FROM scheduled_jobs ORDER BY due_at,id LIMIT 500')]
+                    else: rows=[dict(r) for r in con.execute('SELECT * FROM scheduled_jobs WHERE status=? ORDER BY due_at,id LIMIT 500',(status_filter,))]
+                for row in rows:
+                    try: row['payload']=json.loads(row.pop('payload_json') or '{}')
+                    except (ValueError,TypeError): row['payload']={}
+                    try: row['result']=json.loads(row.pop('result_json') or '{}')
+                    except (ValueError,TypeError): row['result']={}
+                return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
+            if path=='/api/automation/rules':
+                with db_connect() as con: rows=[automation_rule_dict(r) for r in con.execute('SELECT * FROM automation_rules ORDER BY id DESC')]
+                return self.send_json({'items':rows,'count':len(rows)})
+            if path=='/api/actions/proposals':
+                status_filter=q.get('status',['pending'])[0]
+                if status_filter not in ('pending','approved','rejected','executed','failed','all'):return self.fail(400,'Ungültiger Vorschlagsstatus.')
+                with db_connect() as con:
+                    if status_filter=='all': rows=[proposal_dict(r) for r in con.execute('SELECT * FROM action_proposals ORDER BY created_at DESC,id DESC LIMIT 500')]
+                    else: rows=[proposal_dict(r) for r in con.execute('SELECT * FROM action_proposals WHERE status=? ORDER BY created_at DESC,id DESC LIMIT 500',(status_filter,))]
+                return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
+            if path=='/api/engine/status':
+                with db_connect() as con: return self.send_json(build_engine_status(con,AI_PROVIDER.status()))
+            if path=='/api/ai/status': return self.send_json(AI_PROVIDER.status())
+            if path=='/api/events':
+                if q.get('snapshot',['0'])[0]=='1':
+                    with db_connect() as con:
+                        latest=con.execute('SELECT MAX(event_id) AS value FROM event_journal').fetchone()['value'] or 0
+                    return self.send_json({'events':[],'cursor':latest,'latest_event_id':latest,'reset_required':False})
+                try: since=max(0,int(q.get('since',['0'])[0])); limit=max(1,min(500,int(q.get('limit',['100'])[0])))
+                except (TypeError,ValueError): return self.fail(400,'Ungültiger Ereignis-Cursor oder Seitenumfang.')
+                with db_connect() as con: return self.send_json(read_event_batch(con,since,limit))
             if path=='/api/health': return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'database':'SQLite','data_dir':str(DATA_HOME),'backup_count':len(list(BACKUP_DIR.glob('kor-*.sqlite3'))),'python':sys.version.split()[0]})
             if path=='/api/tasks':
                 with db_connect() as con:return self.send_json({'items':[task_dict(r) for r in con.execute('SELECT * FROM tasks ORDER BY done ASC,id DESC')]})
+            m=re.fullmatch(r'/api/tasks/(\d+)/dependencies',path)
+            if m:
+                ident=int(m.group(1))
+                with db_connect() as con:
+                    if not con.execute('SELECT 1 FROM tasks WHERE id=?',(ident,)).fetchone():return self.fail(404,'Aufgabe nicht gefunden.')
+                    rows=[dict(r) for r in con.execute('SELECT d.*,t.title AS depends_on_title,t.done AS depends_on_done FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_task_id WHERE d.task_id=? ORDER BY d.id',(ident,))]
+                return self.send_json({'items':rows,'task_id':ident})
             if path=='/api/records':
                 module=q.get('module',[''])[0]
                 if module not in MODULES:return self.fail(400,'Unbekanntes Modul.')
@@ -679,6 +1223,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if path=='/api/settings':return self.send_json({'settings':get_settings()})
             if path=='/api/units':
                 with db_connect() as con:return self.send_json({'items':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id DESC')]})
+            m=re.fullmatch(r'/api/resources/(\d+)/movements',path)
+            if m:
+                ident=int(m.group(1))
+                with db_connect() as con:
+                    if not con.execute('SELECT 1 FROM resources WHERE id=?',(ident,)).fetchone(): return self.fail(404,'Ressource nicht gefunden.')
+                    rows=[dict(r) for r in con.execute('SELECT * FROM resource_movements WHERE resource_id=? ORDER BY id DESC LIMIT 500',(ident,))]
+                return self.send_json({'items':rows,'resource_id':ident})
             if path=='/api/resources':
                 with db_connect() as con:return self.send_json({'items':[dict(r) for r in con.execute('SELECT * FROM resources ORDER BY id DESC')]})
             if path=='/api/assignments':
@@ -731,8 +1282,22 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         try:data=self.read_body()
         except ValueError as e:return self.fail(400,str(e))
-        if path!='/api/import/preview': maybe_backup()
         now=utcnow()
+        if path=='/api/ai/generate':
+            prompt=data.get('prompt')
+            context=data.get('context')
+            if not isinstance(prompt,str) or not prompt.strip():return self.fail(400,'Prompt muss ein nichtleerer Text sein.')
+            if len(prompt)>12000:return self.fail(400,'Prompt darf höchstens 12.000 Zeichen enthalten.')
+            if context is not None and not isinstance(context,(dict,list)):return self.fail(400,'Kontext muss ein JSON-Objekt oder eine JSON-Liste sein.')
+            try:
+                if context is not None and len(json.dumps(context,ensure_ascii=False,separators=(',',':'),allow_nan=False))>12000:return self.fail(400,'Kontext darf höchstens 12.000 Zeichen enthalten.')
+                response=AI_PROVIDER.generate(prompt,context)
+            except (TypeError,ValueError):return self.fail(400,'Prompt oder Kontext enthält ungültige Daten.')
+            except AIUnavailableError as exc:return self.fail(503,str(exc))
+            except Exception:return self.fail(502,'Die lokale KI-Anfrage ist fehlgeschlagen.')
+            provider_status=AI_PROVIDER.status()
+            return self.send_json({'ok':True,'provider':provider_status.get('provider','unknown'),'response':response})
+        if path!='/api/import/preview': maybe_backup()
         if path=='/api/import/preview':
             return self.send_json(portable_import_preview(data.get('data')))
         if path=='/api/geodata/germany-states':
@@ -757,11 +1322,138 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json({'ok':True,'available':True,'feature_count':len(features),'recognized_state_names':len(found & valid_names),'note':'Geometrien lokal in SQLite und als GeoJSON-Datei gespeichert; Quelle, Lizenz und Namen vor Nutzung prüfen.'},201)
         with _db_lock:
             try:
+                if path=='/api/engine/jobs':
+                    job_key=str(data.get('job_key','')).strip()
+                    job_type=str(data.get('job_type','')).strip()
+                    if not re.fullmatch(r'[A-Za-z0-9._:-]{1,120}',job_key):return self.fail(400,'job_key muss 1–120 sichere Zeichen enthalten.')
+                    if job_type not in ('engine_evaluate','run_automations'):return self.fail(400,'Unbekannter geplanter Jobtyp.')
+                    payload=data.get('payload',{})
+                    if not isinstance(payload,dict) or payload:return self.fail(400,'Geplante Jobs akzeptieren derzeit keine Zusatzdaten.')
+                    try:
+                        due_raw=str(data.get('due_at','')).strip()
+                        due_dt=dt.datetime.fromisoformat(due_raw.replace('Z','+00:00'))
+                        if due_dt.tzinfo is None:return self.fail(400,'due_at muss eine Zeitzone enthalten.')
+                        due_at=due_dt.astimezone(dt.timezone.utc).isoformat(timespec='seconds')
+                    except (ValueError,TypeError):return self.fail(400,'due_at muss ein ISO-8601-Zeitstempel mit Zeitzone sein.')
+                    with db_connect() as con:
+                        if con.execute('SELECT 1 FROM scheduled_jobs WHERE job_key=?',(job_key,)).fetchone():return self.fail(409,'job_key existiert bereits.')
+                        cur=con.execute("INSERT INTO scheduled_jobs(job_key,job_type,payload_json,due_at,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)",(job_key,job_type,'{}',due_at,now,now))
+                        row=con.execute('SELECT * FROM scheduled_jobs WHERE id=?',(cur.lastrowid,)).fetchone()
+                    item=dict(row);item['payload']=json.loads(item.pop('payload_json'));item['result']=json.loads(item.pop('result_json'))
+                    return self.send_json({'item':item},201)
+                if path=='/api/engine/jobs/run-due':
+                    with db_connect() as con: result=run_due_scheduled_jobs(con,utcnow())
+                    return self.send_json({'ok':True,'result':result})
+                if path=='/api/automation/rules':
+                    try: values=normalize_automation_rule(data)
+                    except ValueError as exc:return self.fail(400,str(exc))
+                    with db_connect() as con:
+                        if con.execute('SELECT 1 FROM automation_rules WHERE rule_key=?',(values[0],)).fetchone():return self.fail(409,'rule_key existiert bereits.')
+                        cur=con.execute('INSERT INTO automation_rules(rule_key,name,trigger_type,action_type,action_json,risk_level,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(*values,now,now))
+                        row=con.execute('SELECT * FROM automation_rules WHERE id=?',(cur.lastrowid,)).fetchone()
+                    return self.send_json({'item':automation_rule_dict(row)},201)
+                if path=='/api/automation/run':
+                    with db_connect() as con: result=run_automations(con,utcnow())
+                    return self.send_json({'ok':True,'result':result},201)
+                proposal_match=re.fullmatch(r'/api/actions/proposals/(\d+)/(approve|reject|execute)',path)
+                if proposal_match:
+                    ident=int(proposal_match.group(1));decision=proposal_match.group(2);now=utcnow()
+                    with db_connect() as con:
+                        proposal=con.execute('SELECT * FROM action_proposals WHERE id=?',(ident,)).fetchone()
+                        if not proposal:return self.fail(404,'Aktionsvorschlag nicht gefunden.')
+                        if decision=='approve':
+                            if proposal['status']!='pending':return self.fail(409,'Nur offene Vorschläge können bestätigt werden.')
+                            con.execute("UPDATE action_proposals SET status='approved',decided_at=? WHERE id=?",(now,ident))
+                        elif decision=='reject':
+                            if proposal['status']!='pending':return self.fail(409,'Nur offene Vorschläge können abgelehnt werden.')
+                            con.execute("UPDATE action_proposals SET status='rejected',decided_at=? WHERE id=?",(now,ident))
+                        else:
+                            if proposal['status']=='executed':return self.send_json({'item':proposal_dict(proposal),'idempotent_replay':True})
+                            if proposal['status']!='approved':return self.fail(409,'Kritische Aktion muss vor der Ausführung ausdrücklich bestätigt werden.')
+                            payload=json.loads(proposal['payload_json'])
+                            resource=con.execute('SELECT * FROM resources WHERE id=?',(int(payload['resource_id']),)).fetchone()
+                            if not resource:return self.fail(404,'Zielressource existiert nicht mehr.')
+                            delta=float(payload['quantity_delta']);new_quantity=float(resource['quantity'])+delta
+                            if not math.isfinite(delta) or delta<=0 or new_quantity>1e12:return self.fail(400,'Bestandsanpassung liegt außerhalb des erlaubten Bereichs.')
+                            con.execute('UPDATE resources SET quantity=?,updated_at=? WHERE id=?',(new_quantity,now,resource['id']))
+                            con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(resource['id'],resource['name'],'adjustment',delta,new_quantity,resource['unit'],str(payload.get('notes','Automationsvorschlag bestätigt'))[:2000],'proposal:'+str(ident),now))
+                            result_json=json.dumps({'resource_id':resource['id'],'quantity_before':resource['quantity'],'quantity_after':new_quantity,'movement_type':'adjustment'},ensure_ascii=False,separators=(',',':'))
+                            con.execute("UPDATE action_proposals SET status='executed',executed_at=?,result_json=? WHERE id=?",(now,result_json,ident))
+                        updated=con.execute('SELECT * FROM action_proposals WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':proposal_dict(updated)})
+                if path=='/api/engine/evaluate':
+                    with db_connect() as con: result=evaluate_engine(con,utcnow())
+                    return self.send_json({'ok':True,'result':result},201)
+                m=re.fullmatch(r'/api/engine/alerts/(\d+)/acknowledge',path)
+                if m:
+                    ident=int(m.group(1));now=utcnow()
+                    with db_connect() as con:
+                        alert=con.execute('SELECT * FROM alerts WHERE id=?',(ident,)).fetchone()
+                        if not alert:return self.fail(404,'Alert nicht gefunden.')
+                        if alert['status']=='resolved':return self.fail(409,'Ein bereits aufgelöster Alert kann nicht bestätigt werden.')
+                        con.execute("UPDATE alerts SET status='acknowledged',acknowledged_at=?,updated_at=? WHERE id=?",(now,now,ident))
+                        updated=con.execute('SELECT * FROM alerts WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':dict(updated)})
+                m=re.fullmatch(r'/api/resources/(\d+)/movements',path)
+                if m:
+                    ident=int(m.group(1))
+                    movement_type=str(data.get('movement_type','')).strip()
+                    notes=str(data.get('notes','')).strip()
+                    key_value=data.get('idempotency_key')
+                    key=uuid.uuid4().hex if key_value is None else str(key_value).strip()
+                    if movement_type not in ('receipt','consumption','adjustment'):return self.fail(400,'Bewegungstyp muss receipt, consumption oder adjustment sein.')
+                    if not key or len(key)>160:return self.fail(400,'Idempotency-Key muss 1–160 Zeichen lang sein.')
+                    if len(notes)>2000:return self.fail(400,'Bewegungsnotiz darf höchstens 2.000 Zeichen enthalten.')
+                    try:
+                        amount=float(data.get('quantity_delta') if movement_type=='adjustment' else data.get('quantity'))
+                    except (TypeError,ValueError):return self.fail(400,'Bewegungsmenge muss eine gültige Zahl sein.')
+                    if not math.isfinite(amount) or abs(amount)>1e12:return self.fail(400,'Bewegungsmenge muss endlich sein und darf 1e12 nicht überschreiten.')
+                    if movement_type in ('receipt','consumption') and amount<=0:return self.fail(400,'Wareneingang und Verbrauch benötigen eine positive Menge.')
+                    if movement_type=='adjustment' and amount==0:return self.fail(400,'Eine Bestandskorrektur darf nicht null sein.')
+                    delta=amount if movement_type=='receipt' else -amount if movement_type=='consumption' else amount
+                    with db_connect() as con:
+                        resource=con.execute('SELECT * FROM resources WHERE id=?',(ident,)).fetchone()
+                        if not resource:return self.fail(404,'Ressource nicht gefunden.')
+                        existing=con.execute('SELECT * FROM resource_movements WHERE idempotency_key=?',(key,)).fetchone()
+                        if existing:
+                            if existing['resource_id']!=ident or existing['movement_type']!=movement_type or abs(float(existing['quantity_delta'])-delta)>1e-9:
+                                return self.fail(409,'Idempotency-Key wurde bereits für eine andere Bewegung verwendet.')
+                            return self.send_json({'item':dict(existing),'resource':dict(resource),'idempotent_replay':True})
+                        new_quantity=float(resource['quantity'])+delta
+                        if new_quantity < -1e-9:return self.fail(400,'Der Bestand darf nicht negativ werden.')
+                        if new_quantity > 1e12:return self.fail(400,'Der Bestand darf 1e12 nicht überschreiten.')
+                        new_quantity=max(0.0,new_quantity)
+                        con.execute('UPDATE resources SET quantity=?,updated_at=? WHERE id=?',(new_quantity,now,ident))
+                        cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(ident,resource['name'],movement_type,delta,new_quantity,resource['unit'],notes,key,now))
+                        movement=con.execute('SELECT * FROM resource_movements WHERE id=?',(cur.lastrowid,)).fetchone()
+                        updated_resource=con.execute('SELECT * FROM resources WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':dict(movement),'resource':dict(updated_resource),'idempotent_replay':False},201)
+                m=re.fullmatch(r'/api/tasks/(\d+)/dependencies',path)
+                if m:
+                    task_id=int(m.group(1))
+                    try: depends_on=int(data.get('depends_on_task_id'))
+                    except (TypeError,ValueError): return self.fail(400,'depends_on_task_id muss eine gültige Aufgaben-ID sein.')
+                    if data.get('dependency_type','finish_to_start')!='finish_to_start':return self.fail(400,'Nur finish_to_start-Abhängigkeiten werden unterstützt.')
+                    if task_id==depends_on:return self.fail(400,'Eine Aufgabe kann nicht von sich selbst abhängen.')
+                    with db_connect() as con:
+                        if not con.execute('SELECT 1 FROM tasks WHERE id=?',(task_id,)).fetchone() or not con.execute('SELECT 1 FROM tasks WHERE id=?',(depends_on,)).fetchone():return self.fail(404,'Aufgabe oder Abhängigkeit nicht gefunden.')
+                        cycle=con.execute("""WITH RECURSIVE reachable(id) AS (
+                            SELECT depends_on_task_id FROM task_dependencies WHERE task_id=?
+                            UNION
+                            SELECT d.depends_on_task_id FROM task_dependencies d JOIN reachable r ON d.task_id=r.id
+                        ) SELECT 1 FROM reachable WHERE id=? LIMIT 1""",(depends_on,task_id)).fetchone()
+                        if cycle:return self.fail(409,'Diese Abhängigkeit würde einen Zyklus erzeugen.')
+                        if con.execute('SELECT 1 FROM task_dependencies WHERE task_id=? AND depends_on_task_id=?',(task_id,depends_on)).fetchone():return self.fail(409,'Diese Aufgabenabhängigkeit existiert bereits.')
+                        cur=con.execute('INSERT INTO task_dependencies(task_id,depends_on_task_id,dependency_type,created_at) VALUES(?,?,?,?)',(task_id,depends_on,'finish_to_start',now))
+                        row=con.execute('SELECT d.*,t.title AS depends_on_title,t.done AS depends_on_done FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_task_id WHERE d.id=?',(cur.lastrowid,)).fetchone()
+                    return self.send_json({'item':dict(row)},201)
                 if path=='/api/tasks':
                     title=str(data.get('title','')).strip();area=str(data.get('area','SYSTEM')).strip()[:80] or 'SYSTEM'
                     if not title or len(title)>180:return self.fail(400,'Titel muss zwischen 1 und 180 Zeichen lang sein.')
+                    try: schedule=normalize_task_schedule(data)
+                    except ValueError as exc:return self.fail(400,str(exc))
                     with db_connect() as con:
-                        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at) VALUES(?,?,0,?,?)',(title,area,now,now));r=con.execute('SELECT * FROM tasks WHERE id=?',(cur.lastrowid,)).fetchone()
+                        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at,due_at,priority,estimated_minutes,actual_minutes,recurrence_json,blocked_reason) VALUES(?,?,0,?,?,?,?,?,?,?,?)',(title,area,now,now,*schedule));r=con.execute('SELECT * FROM tasks WHERE id=?',(cur.lastrowid,)).fetchone()
                     return self.send_json({'item':task_dict(r)},201)
                 if path=='/api/locations':
                     title=str(data.get('title','')).strip();region=str(data.get('region','')).strip()[:180];kind=str(data.get('kind','Projekt')).strip()[:40] or 'Projekt';notes=str(data.get('notes',''))
@@ -801,7 +1493,11 @@ class AppHandler(BaseHTTPRequestHandler):
                     try: qty=float(data.get('quantity',0))
                     except (TypeError,ValueError):return self.fail(400,'Menge muss eine Zahl sein.')
                     if not name or len(name)>180 or not math.isfinite(qty) or qty<0 or qty>1e12:return self.fail(400,'Ungültige Ressourcenfelder.')
-                    with db_connect() as con:cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(name,str(data.get('category','Allgemein'))[:80],qty,str(data.get('unit','Stück'))[:40],str(data.get('location',''))[:180],str(data.get('notes',''))[:10000],now,now)); row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+                    with db_connect() as con:
+                        cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(name,str(data.get('category','Allgemein'))[:80],qty,str(data.get('unit','Stück'))[:40],str(data.get('location',''))[:180],str(data.get('notes',''))[:10000],now,now))
+                        row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+                        con.execute('INSERT OR IGNORE INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at) VALUES(?,0,NULL,?)',(cur.lastrowid,now))
+                        con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,row['name'],'opening_balance',qty,qty,row['unit'],'Eröffnungsbestand bei Erstellung.','resource-create:'+str(cur.lastrowid),now))
                     return self.send_json({'item':dict(row)},201)
                 if path=='/api/assignments':
                     try: pid=int(data['project_id']); qty=float(data.get('quantity',0)); uid=int(data['unit_id']) if data.get('unit_id') is not None else None; rid=int(data['resource_id']) if data.get('resource_id') is not None else None
@@ -844,6 +1540,13 @@ class AppHandler(BaseHTTPRequestHandler):
                             finally:src.close();dst.close()
                     finally:
                         prune_backups()
+                    # Older backups predate the event journal; restore the additive schema in-place.
+                    with _db_lock, db_connect() as con:
+                        ensure_resource_ledger_schema(con)
+                        ensure_engine_schema(con)
+                        ensure_task_engine_schema(con)
+                        ensure_automation_schema(con)
+                        ensure_event_journal_schema(con)
                     return self.send_json({'ok':True,'restored':name,'safety_backup':safety})
                 if path=='/api/import':
                     exported=data.get('data')
@@ -875,6 +1578,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     prune_backups()
                     return self.send_json({'ok':True,**counts,'safety_backup':safety,'schema_version':exported['schema_version']})
             except sqlite3.Error as e:
+                print(f'[KOR] Datenbankfehler: {e}',file=sys.stderr)
                 return self.fail(500,'Datenbankfehler; die lokalen Daten wurden nicht absichtlich gelöscht. Details stehen nicht im Browser.')
             except Exception as e:
                 print(f'[KOR] API-Fehler: {e}',file=sys.stderr);return self.fail(500,'Interner Fehler. Siehe lokale Terminalausgabe.')
@@ -895,7 +1599,9 @@ class AppHandler(BaseHTTPRequestHandler):
                         if not old:return self.fail(404,'Aufgabe nicht gefunden.')
                         title=str(data.get('title',old['title'])).strip();area=str(data.get('area',old['area'])).strip()[:80];done=int(bool(data.get('done',old['done'])))
                         if not title or len(title)>180:return self.fail(400,'Ungültiger Titel.')
-                        con.execute('UPDATE tasks SET title=?,area=?,done=?,updated_at=? WHERE id=?',(title,area,done,now,ident));r=con.execute('SELECT * FROM tasks WHERE id=?',(ident,)).fetchone()
+                        try: schedule=normalize_task_schedule(data,old)
+                        except ValueError as exc:return self.fail(400,str(exc))
+                        con.execute('UPDATE tasks SET title=?,area=?,done=?,due_at=?,priority=?,estimated_minutes=?,actual_minutes=?,recurrence_json=?,blocked_reason=?,updated_at=? WHERE id=?',(title,area,done,*schedule,now,ident));r=con.execute('SELECT * FROM tasks WHERE id=?',(ident,)).fetchone()
                     return self.send_json({'item':task_dict(r)})
                 m=re.fullmatch(r'/api/records/(\d+)',path)
                 if m:
@@ -926,8 +1632,41 @@ class AppHandler(BaseHTTPRequestHandler):
                         con.execute('UPDATE map_locations SET title=?,kind=?,region=?,latitude=?,longitude=?,project_id=?,notes=?,updated_at=?,status=?,progress=?,task_id=?,unit_id=?,resource_id=? WHERE id=?',(title,kind,region,lat,lon,refs['project_id'],notes,now,status,progress,refs['task_id'],refs['unit_id'],refs['resource_id'],ident))
                         row=con.execute('SELECT l.*,p.title AS project_title,t.title AS task_title,u.name AS unit_name,rs.name AS resource_name FROM map_locations l LEFT JOIN records p ON p.id=l.project_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN resources rs ON rs.id=l.resource_id WHERE l.id=?',(ident,)).fetchone()
                     return self.send_json({'item':dict(row)})
+                m=re.fullmatch(r'/api/resources/(\d+)/policy',path)
+                if m:
+                    ident=int(m.group(1))
+                    if any(k not in ('minimum_quantity','target_quantity') for k in data):return self.fail(400,'Unbekanntes Feld für Bestandsrichtlinie.')
+                    with db_connect() as con:
+                        if not con.execute('SELECT 1 FROM resources WHERE id=?',(ident,)).fetchone():return self.fail(404,'Ressource nicht gefunden.')
+                        old=con.execute('SELECT * FROM resource_policies WHERE resource_id=?',(ident,)).fetchone()
+                        if not old:
+                            con.execute('INSERT INTO resource_policies(resource_id,minimum_quantity,target_quantity,updated_at) VALUES(?,0,NULL,?)',(ident,now))
+                            old=con.execute('SELECT * FROM resource_policies WHERE resource_id=?',(ident,)).fetchone()
+                        try:
+                            minimum=float(data.get('minimum_quantity',old['minimum_quantity']))
+                            target_value=data.get('target_quantity',old['target_quantity'])
+                            target=None if target_value in (None,'') else float(target_value)
+                        except (TypeError,ValueError):return self.fail(400,'Mindest- und Zielbestand müssen gültige Zahlen sein.')
+                        if not math.isfinite(minimum) or minimum<0 or minimum>1e12:return self.fail(400,'Mindestbestand muss zwischen 0 und 1e12 liegen.')
+                        if target is not None and (not math.isfinite(target) or target<minimum or target>1e12):return self.fail(400,'Zielbestand muss mindestens dem Mindestbestand entsprechen und höchstens 1e12 sein.')
+                        con.execute('UPDATE resource_policies SET minimum_quantity=?,target_quantity=?,updated_at=? WHERE resource_id=?',(minimum,target,now,ident))
+                        row=con.execute('SELECT p.*,r.name AS resource_name,r.quantity AS current_quantity,r.unit FROM resource_policies p JOIN resources r ON r.id=p.resource_id WHERE p.resource_id=?',(ident,)).fetchone()
+                    return self.send_json({'policy':dict(row)})
+                m=re.fullmatch(r'/api/automation/rules/(\d+)',path)
+                if m:
+                    ident=int(m.group(1))
+                    if any(k not in ('name','enabled') for k in data):return self.fail(400,'Nur name und enabled können hier geändert werden.')
+                    with db_connect() as con:
+                        old=con.execute('SELECT * FROM automation_rules WHERE id=?',(ident,)).fetchone()
+                        if not old:return self.fail(404,'Automationsregel nicht gefunden.')
+                        name=str(data.get('name',old['name'])).strip()
+                        if not name or len(name)>180:return self.fail(400,'Regelname muss zwischen 1 und 180 Zeichen lang sein.')
+                        enabled=int(bool(data.get('enabled',old['enabled'])))
+                        con.execute('UPDATE automation_rules SET name=?,enabled=?,updated_at=? WHERE id=?',(name,enabled,now,ident))
+                        row=con.execute('SELECT * FROM automation_rules WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':automation_rule_dict(row)})
                 if path=='/api/settings':
-                    allowed={'language','backup_keep','backup_interval_minutes','unit_label_singular','unit_label_plural'}
+                    allowed={'language','backup_keep','backup_interval_minutes','unit_label_singular','unit_label_plural','event_retention_count'}
                     if any(k not in allowed for k in data):return self.fail(400,'Unbekannte Einstellung.')
                     if 'language' in data and data['language'] not in ('de','en'):return self.fail(400,'Sprache muss de oder en sein.')
                     if any(k in data and (not str(data[k]).strip() or len(str(data[k]))>60) for k in ('unit_label_singular','unit_label_plural')):return self.fail(400,'Einheitenbezeichnung muss 1–60 Zeichen lang sein.')
@@ -937,8 +1676,12 @@ class AppHandler(BaseHTTPRequestHandler):
                     if 'backup_interval_minutes' in data:
                         try:data['backup_interval_minutes']=str(max(5,min(1440,int(data['backup_interval_minutes']))))
                         except Exception:return self.fail(400,'Backupintervall muss 5–1440 Minuten sein.')
+                    if 'event_retention_count' in data:
+                        try:data['event_retention_count']=str(max(1000,min(1000000,int(data['event_retention_count']))))
+                        except Exception:return self.fail(400,'Ereignis-Aufbewahrung muss 1000–1000000 sein.')
                     with db_connect() as con:
                         for k,v in data.items():con.execute('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',(k,str(v),now))
+                        if 'event_retention_count' in data:prune_event_journal(con)
                     return self.send_json({'settings':get_settings()})
             except Exception as e:print(f'[KOR] PATCH-Fehler: {e}',file=sys.stderr);return self.fail(500,'Interner Fehler.')
         return self.fail(404,'Endpunkt nicht gefunden.')
@@ -947,6 +1690,14 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         with _db_lock:
             try:
+                m=re.fullmatch(r'/api/automation/rules/(\d+)',path)
+                if m:
+                    with db_connect() as con:con.execute('DELETE FROM automation_rules WHERE id=?',(int(m.group(1)),))
+                    return self.send_json({'ok':True})
+                m=re.fullmatch(r'/api/task-dependencies/(\d+)',path)
+                if m:
+                    with db_connect() as con:con.execute('DELETE FROM task_dependencies WHERE id=?',(int(m.group(1)),))
+                    return self.send_json({'ok':True})
                 m=re.fullmatch(r'/api/tasks/(\d+)',path)
                 if m:
                     with db_connect() as con:con.execute('DELETE FROM tasks WHERE id=?',(int(m.group(1)),))
@@ -1089,8 +1840,13 @@ def main():
         threading.Timer(0.35,lambda:open_app_or_report(url)).start()
     stop_backups=threading.Event();server.shutdown_event=threading.Event()
     def backup_loop():
-        while not stop_backups.wait(30):maybe_backup()
-    backup_thread=threading.Thread(target=backup_loop,name='kor-backup-scheduler',daemon=True);backup_thread.start()
+        while not stop_backups.wait(30):
+            try: maybe_backup()
+            except Exception as exc: print(f'[KOR] Automatisches Backup fehlgeschlagen: {exc}',file=sys.stderr)
+            try:
+                with _db_lock, db_connect() as con: run_due_scheduled_jobs(con,utcnow())
+            except Exception as exc: print(f'[KOR] Geplante Engine-Jobs fehlgeschlagen: {exc}',file=sys.stderr)
+    backup_thread=threading.Thread(target=backup_loop,name='kor-background-scheduler',daemon=True);backup_thread.start()
     try:
         while not server.shutdown_event.is_set():server.handle_request()
     except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')
