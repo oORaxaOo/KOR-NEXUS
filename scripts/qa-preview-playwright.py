@@ -21,7 +21,7 @@ assert 'id="mapLocFilterKind"' in html and 'id="exportAtlasCsv"' in html, 'Atlas
 html=html.replace('<link rel="stylesheet" href="./styles.css">',f'<style>\n{css}\n</style>',1)
 html=html.replace('<script src="./app.js" defer></script>','<!-- API mock is installed before the application script for isolated UI tests -->',1)
 mock=r'''<script>
-const __state={stateGeo:null,tasks:[],records:[{id:900,module:'projects',title:'QA-existing-persisted-project',body:'Loaded from the mock database',region:'SYSTEM',tags:['persisted'],created_at:new Date().toISOString(),updated_at:new Date().toISOString()}],settings:{language:'de',backup_keep:'12',backup_interval_minutes:'30',last_news_refresh:''},backups:[],news:[],sources:[],nextTask:1,nextRecord:1,nextBackup:1,units:[],resources:[],assignments:[],nextUnit:1,nextResource:1,nextAssignment:1,locations:[],nextLocation:1,engineRules:[],alerts:[],proposals:[],jobs:[],nextRule:1,nextProposal:1,nextJob:1};
+const __state={stateGeo:null,tasks:[],records:[{id:900,module:'projects',title:'QA-existing-persisted-project',body:'Loaded from the mock database',region:'SYSTEM',tags:['persisted'],created_at:new Date().toISOString(),updated_at:new Date().toISOString()}],settings:{language:'de',backup_keep:'12',backup_interval_minutes:'30',event_retention_count:'100000',last_news_refresh:''},backups:[],news:[],sources:[],nextTask:1,nextRecord:1,nextBackup:1,units:[],resources:[],assignments:[],nextUnit:1,nextResource:1,nextAssignment:1,locations:[],nextLocation:1,engineRules:[],alerts:[],proposals:[],jobs:[],nextRule:1,nextProposal:1,nextJob:1};
 window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;window.__qaRequests=[];
 window.fetch=async (input,init={})=>{
  const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();window.__qaRequests.push({url:String(input),path,search:u.search,method});let body={},m;try{body=init.body?JSON.parse(init.body):{}}catch{}
@@ -208,6 +208,9 @@ with sync_playwright() as p:
   print('PASS: Personal- und Ressourcenverwaltung sowie Projektzuweisungen rendern und speichern')
   page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='en'",timeout=3000);page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='de'",timeout=3000)
   page.locator('#settingsBtn').click();assert 'open' in page.locator('#settingsModal').get_attribute('class')
+  assert page.locator('#eventRetention').input_value()=='100000'
+  page.locator('#eventRetention').select_option('10000');page.wait_for_function("window.__state.settings.event_retention_count==='10000'",timeout=3000)
+  page.locator('#eventRetention').select_option('100000');page.wait_for_function("window.__state.settings.event_retention_count==='100000'",timeout=3000)
   import json as _json
   tasks_before_preview=page.evaluate('__state.tasks.map(t=>t.title)')
   valid_payload={'schema_version':2,'tasks':[{'id':1,'title':'Vorschauaufgabe'}],'records':[],'map_locations':[],'units':[],'resources':[],'project_assignments':[],'settings':{},'geodata':{},'news':{'items':[],'sources':[]}}
