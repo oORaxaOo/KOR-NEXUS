@@ -1312,10 +1312,6 @@ class AppHandler(BaseHTTPRequestHandler):
         maybe_backup();now=utcnow()
         with _db_lock:
             try:
-                m=re.fullmatch(r'/api/task-dependencies/(\d+)',path)
-                if m:
-                    with db_connect() as con:con.execute('DELETE FROM task_dependencies WHERE id=?',(int(m.group(1)),))
-                    return self.send_json({'ok':True})
                 m=re.fullmatch(r'/api/tasks/(\d+)',path)
                 if m:
                     ident=int(m.group(1))
@@ -1398,6 +1394,10 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         with _db_lock:
             try:
+                m=re.fullmatch(r'/api/task-dependencies/(\d+)',path)
+                if m:
+                    with db_connect() as con:con.execute('DELETE FROM task_dependencies WHERE id=?',(int(m.group(1)),))
+                    return self.send_json({'ok':True})
                 m=re.fullmatch(r'/api/tasks/(\d+)',path)
                 if m:
                     with db_connect() as con:con.execute('DELETE FROM tasks WHERE id=?',(int(m.group(1)),))
