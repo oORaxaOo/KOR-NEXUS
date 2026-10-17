@@ -163,8 +163,8 @@ with sync_playwright() as p:
   page.locator('[data-map-mode="world"]').click();assert page.locator('#geographicLand .geo-country').count()>=2
   print('PASS: GeoJSON-Weltkarte, Deutschlandansicht und lokaler Bundesland-Geodatenimport')
   print('PASS: Kartenmarker anlegen, Status/Fortschritt bearbeiten, suchen, auflisten und löschen')
-  page.locator('#taskInput').fill('QA-Aufgabe');page.locator('#taskForm button').click();page.get_by_text('QA-Aufgabe').wait_for();assert page.locator('#taskList .task-row').count()==1
-  page.locator('#taskList [data-task]').check();page.wait_for_function("document.querySelector('#taskList .task-row')?.classList.contains('done')",timeout=3000);assert 'done' in page.locator('#taskList .task-row').get_attribute('class')
+  page.locator('#taskInput').fill('QA-Aufgabe');page.locator('#taskForm button').click();page.get_by_text('QA-Aufgabe',exact=True).wait_for();qa_task_row=page.locator('#taskList .task-row').filter(has_text='QA-Aufgabe');assert qa_task_row.count()==1, 'neu angelegte QA-Aufgabe muss genau eine eigene Zeile besitzen'
+  qa_task_row.locator('[data-task]').check();page.wait_for_function("[...document.querySelectorAll('#taskList .task-row')].some(row=>row.innerText.includes('QA-Aufgabe')&&row.classList.contains('done'))",timeout=3000);assert 'done' in qa_task_row.get_attribute('class')
   print('PASS: Aufgabe anlegen und erledigen')
   for module in ['projects','archive','simulation','database']:
    page.locator(f'#nav button[data-module="{module}"]').click()
