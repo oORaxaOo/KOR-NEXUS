@@ -77,6 +77,8 @@ def db_connect():
 
 def ensure_resource_ledger_schema(con):
     """Add an auditable stock-movement ledger and snapshot legacy quantities once."""
+    ledger_existed=con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='resource_movements'").fetchone() is not None
+    migration_applied=con.execute('SELECT 1 FROM schema_migrations WHERE version=7').fetchone() is not None
     con.execute("""CREATE TABLE IF NOT EXISTS resource_movements(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         resource_id INTEGER REFERENCES resources(id) ON DELETE SET NULL,
@@ -91,12 +93,15 @@ def ensure_resource_ledger_schema(con):
         created_at TEXT NOT NULL
     )""")
     con.execute('CREATE INDEX IF NOT EXISTS idx_resource_movements_resource ON resource_movements(resource_id,id DESC)')
-    con.execute("""INSERT OR IGNORE INTO resource_movements
-        (resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at)
-        SELECT id,name,'opening_balance',quantity,quantity,unit,
-               'Eröffnungsbestand bei Einführung des Bewegungsjournals; historische Bewegungen wurden nicht rekonstruiert.',
-               'migration-v7-opening-' || id,updated_at
-        FROM resources""")
+    # Seed only on first installation of the ledger or when upgrading a legacy database.
+    # Re-running this helper after a normal restore must never duplicate opening balances.
+    if not ledger_existed or not migration_applied:
+        con.execute("""INSERT OR IGNORE INTO resource_movements
+            (resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at)
+            SELECT id,name,'opening_balance',quantity,quantity,unit,
+                   'Eröffnungsbestand bei Einführung des Bewegungsjournals; historische Bewegungen wurden nicht rekonstruiert.',
+                   'migration-v7-opening-' || id,updated_at
+            FROM resources""")
 
 
 def ensure_event_journal_schema(con):
@@ -925,6 +930,7 @@ class AppHandler(BaseHTTPRequestHandler):
                             return self.send_json({'item':dict(existing),'resource':dict(resource),'idempotent_replay':True})
                         new_quantity=float(resource['quantity'])+delta
                         if new_quantity < -1e-9:return self.fail(400,'Der Bestand darf nicht negativ werden.')
+                        if new_quantity > 1e12:return self.fail(400,'Der Bestand darf 1e12 nicht überschreiten.')
                         new_quantity=max(0.0,new_quantity)
                         con.execute('UPDATE resources SET quantity=?,updated_at=? WHERE id=?',(new_quantity,now,ident))
                         cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(ident,resource['name'],movement_type,delta,new_quantity,resource['unit'],notes,key,now))

@@ -79,6 +79,11 @@ class CoreApiTests(unittest.TestCase):
     def test_resource_movements_are_atomic_idempotent_and_never_negative(self):
         _,created=self.req('/api/resources','POST',{'name':'Ledger-Test','quantity':5,'unit':'Kisten'})
         resource_id=created['item']['id']
+        with app.db_connect() as con:
+            before_count=con.execute('SELECT COUNT(*) FROM resource_movements WHERE resource_id=?',(resource_id,)).fetchone()[0]
+            app.ensure_resource_ledger_schema(con)
+            after_count=con.execute('SELECT COUNT(*) FROM resource_movements WHERE resource_id=?',(resource_id,)).fetchone()[0]
+        self.assertEqual(after_count,before_count,'Schema-Verifikation darf keinen zweiten Eröffnungsbestand erzeugen.')
         status,receipt=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':3,'idempotency_key':'receipt-ledger-1','notes':'Lieferung'})
         self.assertEqual(status,201)
         self.assertEqual(receipt['resource']['quantity'],8)
@@ -98,6 +103,7 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual([x['movement_type'] for x in reversed(items['items'])],['opening_balance','receipt','consumption','adjustment'])
         self.assertEqual(items['items'][-1]['quantity_after'],5)
         self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':2,'idempotency_key':'receipt-ledger-1'})[0],409)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':1e12,'idempotency_key':'overflow-ledger'})[0],400)
         self.assertEqual(self.req('/api/resources')[1]['items'][0]['quantity'],5)
 
     def test_event_journal_tracks_changes_and_replays_by_cursor(self):
