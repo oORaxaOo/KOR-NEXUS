@@ -27,7 +27,9 @@ def available_memory_bytes():
     try:
         pages = int(os.sysconf('SC_AVPHYS_PAGES'))
         page_size = int(os.sysconf('SC_PAGE_SIZE'))
-        return max(0, pages * page_size)
+        if pages < 0 or page_size <= 0:
+            return None
+        return pages * page_size
     except (AttributeError, OSError, TypeError, ValueError):
         return None
 
