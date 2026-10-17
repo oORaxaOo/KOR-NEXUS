@@ -75,6 +75,30 @@ def db_connect():
 
 
 
+def ensure_resource_ledger_schema(con):
+    """Add an auditable stock-movement ledger and snapshot legacy quantities once."""
+    con.execute("""CREATE TABLE IF NOT EXISTS resource_movements(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id INTEGER REFERENCES resources(id) ON DELETE SET NULL,
+        resource_name TEXT NOT NULL,
+        movement_type TEXT NOT NULL CHECK(movement_type IN ('opening_balance','receipt','consumption','adjustment','import_snapshot','reversal')),
+        quantity_delta REAL NOT NULL CHECK(quantity_delta BETWEEN -1000000000000 AND 1000000000000),
+        quantity_after REAL NOT NULL CHECK(quantity_after BETWEEN 0 AND 1000000000000),
+        unit TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        idempotency_key TEXT NOT NULL UNIQUE,
+        reverses_movement_id INTEGER REFERENCES resource_movements(id) ON DELETE RESTRICT,
+        created_at TEXT NOT NULL
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_resource_movements_resource ON resource_movements(resource_id,id DESC)')
+    con.execute("""INSERT OR IGNORE INTO resource_movements
+        (resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at)
+        SELECT id,name,'opening_balance',quantity,quantity,unit,
+               'Eröffnungsbestand bei Einführung des Bewegungsjournals; historische Bewegungen wurden nicht rekonstruiert.',
+               'migration-v7-opening-' || id,updated_at
+        FROM resources""")
+
+
 def ensure_event_journal_schema(con):
     """Install the additive change journal and triggers without rewriting user data."""
     con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
@@ -90,7 +114,7 @@ def ensure_event_journal_schema(con):
     con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
     entities = [
         ('tasks','task'),('records','record'),('units','unit'),
-        ('resources','resource'),('project_assignments','assignment'),
+        ('resources','resource'),('resource_movements','resource_movement'),('project_assignments','assignment'),
         ('map_locations','location')
     ]
     for table, entity in entities:
@@ -105,6 +129,7 @@ def ensure_event_journal_schema(con):
                          CAST({alias}.id AS TEXT),'{event_type}','{{"id":' || {alias}.id || '}}',1);
                 END""")
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(7,?)',(utcnow(),))
 
 
 def read_event_batch(con, since, limit=100):
@@ -166,6 +191,7 @@ def initialize():
         con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)',(utcnow(),))
         for k,v in [('language','de'),('backup_keep',str(BACKUP_KEEP)),('backup_interval_minutes','30'),('last_news_refresh',''),('unit_label_singular','Mitglied'),('unit_label_plural','Mitglieder')]:
             con.execute('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)',(k,v,utcnow()))
+        ensure_resource_ledger_schema(con)
         ensure_event_journal_schema(con)
         con.commit()
     try: os.chmod(DB_PATH, 0o600)
@@ -592,6 +618,8 @@ def apply_portable_import(con, payload, now):
             if u.get('id') is not None: unit_map[str(u['id'])]=cur.lastrowid
         for r in data['resources']:
             cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(r['name']).strip(),str(r.get('category','Allgemein'))[:80],float(r.get('quantity',0)),str(r.get('unit','Stück'))[:40],str(r.get('location',''))[:180],str(r.get('notes',''))[:10000],str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
+            resource_row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+            con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,resource_row['name'],'import_snapshot',resource_row['quantity'],resource_row['quantity'],resource_row['unit'],'Bestand aus Schema-2-Import übernommen; historische Bewegungen sind unbekannt.','import-snapshot:'+uuid.uuid4().hex,now))
             if r.get('id') is not None: resource_map[str(r['id'])]=cur.lastrowid
     def resolve_ref(item,field,mapping,legacy_name,lookup):
         if item.get(field) not in (None,''):
@@ -785,6 +813,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if path=='/api/settings':return self.send_json({'settings':get_settings()})
             if path=='/api/units':
                 with db_connect() as con:return self.send_json({'items':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id DESC')]})
+            m=re.fullmatch(r'/api/resources/(\d+)/movements',path)
+            if m:
+                ident=int(m.group(1))
+                with db_connect() as con:
+                    if not con.execute('SELECT 1 FROM resources WHERE id=?',(ident,)).fetchone(): return self.fail(404,'Ressource nicht gefunden.')
+                    rows=[dict(r) for r in con.execute('SELECT * FROM resource_movements WHERE resource_id=? ORDER BY id DESC LIMIT 500',(ident,))]
+                return self.send_json({'items':rows,'resource_id':ident})
             if path=='/api/resources':
                 with db_connect() as con:return self.send_json({'items':[dict(r) for r in con.execute('SELECT * FROM resources ORDER BY id DESC')]})
             if path=='/api/assignments':
@@ -863,6 +898,39 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json({'ok':True,'available':True,'feature_count':len(features),'recognized_state_names':len(found & valid_names),'note':'Geometrien lokal in SQLite und als GeoJSON-Datei gespeichert; Quelle, Lizenz und Namen vor Nutzung prüfen.'},201)
         with _db_lock:
             try:
+                m=re.fullmatch(r'/api/resources/(\d+)/movements',path)
+                if m:
+                    ident=int(m.group(1))
+                    movement_type=str(data.get('movement_type','')).strip()
+                    notes=str(data.get('notes','')).strip()
+                    key_value=data.get('idempotency_key')
+                    key=uuid.uuid4().hex if key_value is None else str(key_value).strip()
+                    if movement_type not in ('receipt','consumption','adjustment'):return self.fail(400,'Bewegungstyp muss receipt, consumption oder adjustment sein.')
+                    if not key or len(key)>160:return self.fail(400,'Idempotency-Key muss 1–160 Zeichen lang sein.')
+                    if len(notes)>2000:return self.fail(400,'Bewegungsnotiz darf höchstens 2.000 Zeichen enthalten.')
+                    try:
+                        amount=float(data.get('quantity_delta') if movement_type=='adjustment' else data.get('quantity'))
+                    except (TypeError,ValueError):return self.fail(400,'Bewegungsmenge muss eine gültige Zahl sein.')
+                    if not math.isfinite(amount) or abs(amount)>1e12:return self.fail(400,'Bewegungsmenge muss endlich sein und darf 1e12 nicht überschreiten.')
+                    if movement_type in ('receipt','consumption') and amount<=0:return self.fail(400,'Wareneingang und Verbrauch benötigen eine positive Menge.')
+                    if movement_type=='adjustment' and amount==0:return self.fail(400,'Eine Bestandskorrektur darf nicht null sein.')
+                    delta=amount if movement_type=='receipt' else -amount if movement_type=='consumption' else amount
+                    with db_connect() as con:
+                        resource=con.execute('SELECT * FROM resources WHERE id=?',(ident,)).fetchone()
+                        if not resource:return self.fail(404,'Ressource nicht gefunden.')
+                        existing=con.execute('SELECT * FROM resource_movements WHERE idempotency_key=?',(key,)).fetchone()
+                        if existing:
+                            if existing['resource_id']!=ident or existing['movement_type']!=movement_type or abs(float(existing['quantity_delta'])-delta)>1e-9:
+                                return self.fail(409,'Idempotency-Key wurde bereits für eine andere Bewegung verwendet.')
+                            return self.send_json({'item':dict(existing),'resource':dict(resource),'idempotent_replay':True})
+                        new_quantity=float(resource['quantity'])+delta
+                        if new_quantity < -1e-9:return self.fail(400,'Der Bestand darf nicht negativ werden.')
+                        new_quantity=max(0.0,new_quantity)
+                        con.execute('UPDATE resources SET quantity=?,updated_at=? WHERE id=?',(new_quantity,now,ident))
+                        cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(ident,resource['name'],movement_type,delta,new_quantity,resource['unit'],notes,key,now))
+                        movement=con.execute('SELECT * FROM resource_movements WHERE id=?',(cur.lastrowid,)).fetchone()
+                        updated_resource=con.execute('SELECT * FROM resources WHERE id=?',(ident,)).fetchone()
+                    return self.send_json({'item':dict(movement),'resource':dict(updated_resource),'idempotent_replay':False},201)
                 if path=='/api/tasks':
                     title=str(data.get('title','')).strip();area=str(data.get('area','SYSTEM')).strip()[:80] or 'SYSTEM'
                     if not title or len(title)>180:return self.fail(400,'Titel muss zwischen 1 und 180 Zeichen lang sein.')
@@ -907,7 +975,10 @@ class AppHandler(BaseHTTPRequestHandler):
                     try: qty=float(data.get('quantity',0))
                     except (TypeError,ValueError):return self.fail(400,'Menge muss eine Zahl sein.')
                     if not name or len(name)>180 or not math.isfinite(qty) or qty<0 or qty>1e12:return self.fail(400,'Ungültige Ressourcenfelder.')
-                    with db_connect() as con:cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(name,str(data.get('category','Allgemein'))[:80],qty,str(data.get('unit','Stück'))[:40],str(data.get('location',''))[:180],str(data.get('notes',''))[:10000],now,now)); row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+                    with db_connect() as con:
+                        cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(name,str(data.get('category','Allgemein'))[:80],qty,str(data.get('unit','Stück'))[:40],str(data.get('location',''))[:180],str(data.get('notes',''))[:10000],now,now))
+                        row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
+                        con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,row['name'],'opening_balance',qty,qty,row['unit'],'Eröffnungsbestand bei Erstellung.','resource-create:'+str(cur.lastrowid),now))
                     return self.send_json({'item':dict(row)},201)
                 if path=='/api/assignments':
                     try: pid=int(data['project_id']); qty=float(data.get('quantity',0)); uid=int(data['unit_id']) if data.get('unit_id') is not None else None; rid=int(data['resource_id']) if data.get('resource_id') is not None else None
@@ -952,6 +1023,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         prune_backups()
                     # Older backups predate the event journal; restore the additive schema in-place.
                     with _db_lock, db_connect() as con:
+                        ensure_resource_ledger_schema(con)
                         ensure_event_journal_schema(con)
                     return self.send_json({'ok':True,'restored':name,'safety_backup':safety})
                 if path=='/api/import':

@@ -63,6 +63,43 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_resource_ledger_migrates_existing_stock_without_inventing_history(self):
+        _,created=self.req('/api/resources','POST',{'name':'Bestandsmigration','quantity':7,'unit':'Kisten'})
+        resource_id=created['item']['id']
+        with app.db_connect() as con:
+            con.execute('DROP TABLE resource_movements')
+            con.execute('DELETE FROM schema_migrations WHERE version=7')
+            app.ensure_resource_ledger_schema(con)
+            row=con.execute('SELECT * FROM resource_movements WHERE resource_id=?',(resource_id,)).fetchone()
+        self.assertEqual(row['movement_type'],'opening_balance')
+        self.assertEqual(row['quantity_delta'],7)
+        self.assertEqual(row['quantity_after'],7)
+        self.assertIn('historische Bewegungen wurden nicht rekonstruiert',row['notes'])
+
+    def test_resource_movements_are_atomic_idempotent_and_never_negative(self):
+        _,created=self.req('/api/resources','POST',{'name':'Ledger-Test','quantity':5,'unit':'Kisten'})
+        resource_id=created['item']['id']
+        status,receipt=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':3,'idempotency_key':'receipt-ledger-1','notes':'Lieferung'})
+        self.assertEqual(status,201)
+        self.assertEqual(receipt['resource']['quantity'],8)
+        status,replayed=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':3,'idempotency_key':'receipt-ledger-1','notes':'Lieferung'})
+        self.assertEqual(status,200)
+        self.assertTrue(replayed['idempotent_replay'])
+        self.assertEqual(replayed['resource']['quantity'],8)
+        status,consumed=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'consumption','quantity':2,'idempotency_key':'consume-ledger-1'})
+        self.assertEqual(status,201)
+        self.assertEqual(consumed['resource']['quantity'],6)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'consumption','quantity':7,'idempotency_key':'consume-ledger-too-much'})[0],400)
+        status,adjustment=self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'adjustment','quantity_delta':-1,'idempotency_key':'adjust-ledger-1'})
+        self.assertEqual(status,201)
+        self.assertEqual(adjustment['resource']['quantity'],5)
+        status,items=self.req(f'/api/resources/{resource_id}/movements')
+        self.assertEqual(status,200)
+        self.assertEqual([x['movement_type'] for x in reversed(items['items'])],['opening_balance','receipt','consumption','adjustment'])
+        self.assertEqual(items['items'][-1]['quantity_after'],5)
+        self.assertEqual(self.req(f'/api/resources/{resource_id}/movements','POST',{'movement_type':'receipt','quantity':2,'idempotency_key':'receipt-ledger-1'})[0],409)
+        self.assertEqual(self.req('/api/resources')[1]['items'][0]['quantity'],5)
+
     def test_event_journal_tracks_changes_and_replays_by_cursor(self):
         _,initial=self.req('/api/events')
         cursor=initial['latest_event_id']
@@ -107,7 +144,8 @@ class CoreApiTests(unittest.TestCase):
     def test_restore_from_pre_journal_backup_reinstalls_additive_schema(self):
         with app.db_connect() as con:
             con.execute('DROP TABLE event_journal')
-            con.execute('DELETE FROM schema_migrations WHERE version=6')
+            con.execute('DROP TABLE resource_movements')
+            con.execute('DELETE FROM schema_migrations WHERE version IN (6,7)')
         legacy=app.create_backup('legacy-journal-test')
         status,result=self.req('/api/restore','POST',{'name':legacy['name']})
         self.assertEqual(status,200,result)
@@ -117,6 +155,8 @@ class CoreApiTests(unittest.TestCase):
         with app.db_connect() as con:
             self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=6').fetchone())
             self.assertIsNotNone(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_journal'").fetchone())
+            self.assertIsNotNone(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='resource_movements'").fetchone())
+            self.assertIsNotNone(con.execute('SELECT 1 FROM schema_migrations WHERE version=7').fetchone())
 
 
     def test_active_instance_requires_matching_user_data_directory(self):
