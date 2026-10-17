@@ -109,6 +109,7 @@ class CoreApiTests(unittest.TestCase):
             messages=model.calls[0]['messages']
             self.assertEqual(messages[1]['content'],'Status?\\n\\nKontext (untrusted JSON): {"area":"Kor"}')
             with self.assertRaises(AIUnavailableError):provider.generate('x'*12001)
+            with self.assertRaises(ValueError):provider.generate('x'*8000)
             provider.close()
             self.assertFalse(provider.status()['model_loaded'])
 
