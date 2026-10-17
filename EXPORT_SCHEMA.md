@@ -17,6 +17,7 @@
 | `map_locations[]` | Marker: Koordinaten, Status, Fortschritt, Notizen, Zeitstempel und Referenzen `project_id`, `task_id`, `unit_id`, `resource_id`; lesbare `*_title`/`*_name`-Felder sind nur ergänzende Beschriftungen |
 | `units[]` | Mitgliederprofile einschließlich `biography`, Rolle, Status, Region, Tags und Zeitstempel |
 | `resources[]` | Ressourcen einschließlich Kategorie, Menge, Einheit, Ort, Notizen und Zeitstempel |
+| `resource_movements[]` (optional, additiv in Schema 2) | Ressourcenhistorie mit Eröffnungsbestand, Ein-/Ausgängen, Korrekturen, Bestandsständen und optionalen Rücknahmebezügen; Ressourcen- und Bewegungs-IDs werden beim Import neu zugeordnet |
 | `project_assignments[]` | Projekt-, Mitglieds- oder Ressourcenverknüpfungen, Menge, Notizen und Zeitstempel |
 | `settings` | Schlüssel/Wert-Objekt der Anwendungseinstellungen |
 | `geodata` | GeoJSON-Objekte; der interne Schlüssel `germany-states` wird im JSON aus Kompatibilitätsgründen als `germany_states` geschrieben |
@@ -27,7 +28,7 @@
 
 1. Die IDs im Export sind **Paket-IDs**. Sie dienen dazu, Referenzen innerhalb derselben Datei zu verbinden und sind keine Aufforderung, diese SQLite-IDs in einer anderen Installation zu übernehmen.
 2. Der Import baut für jede Entität eine Zuordnung von Paket-ID auf neu erzeugte lokale SQLite-ID auf. Marker und Projektzuweisungen werden ausschließlich durch diese Zuordnung verknüpft.
-3. Schema 2 erfordert eindeutige, nichtleere IDs für jeden Eintrag der strukturierten Entitätslisten. Doppelte IDs, fehlende Ziele, Projektverweise auf Nicht-Projekte und ungültige Mengen/Koordinaten führen zum Abbruch.
+3. Schema 2 erfordert eindeutige, nichtleere IDs für jeden Eintrag der strukturierten Entitätslisten. `resource_movements[]` ist optional, damit ältere Schema-2-Dateien weiterhin gültig bleiben; vorhandene Bewegungen werden bei Import validiert und auf neue lokale IDs umgeschrieben. Doppelte IDs, fehlende Ziele, Projektverweise auf Nicht-Projekte und ungültige Mengen/Koordinaten führen zum Abbruch.
 4. Bei Schema 1 darf ein fehlender/unpassender Fremdschlüssel nur dann anhand von Titel oder Name rekonstruiert werden, wenn der Zielname eindeutig ist. Mehrdeutige Zuordnungen werden nicht geraten.
 5. Das Programm validiert die gesamte Datei vor dem Backup und vor Änderungen. Danach wird ein Sicherheitsbackup angelegt, der Austausch läuft in einer SQLite-Transaktion und `PRAGMA foreign_key_check` wird ausgeführt. Bei einem Fehler wird die Transaktion zurückgerollt.
 6. Schema 2 ersetzt die exportabgedeckten Tabellen und Geodaten. Ein Schema-1-Import bleibt auf die von diesem älteren Format dargestellten Daten begrenzt; Mitglieder-/Ressourcenlisten werden nicht aus einem fehlenden Feld erfunden.

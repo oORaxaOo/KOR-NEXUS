@@ -335,12 +335,15 @@ class CoreApiTests(unittest.TestCase):
             self.assertIn(key,exported)
         self.assertEqual(exported['units'][0]['biography'],'Profilbiografie')
         self.assertEqual(len(exported['project_assignments']),2)
+        self.assertGreaterEqual(len(exported['resource_movements']),1)
         self.assertEqual(len(exported['news']['items']),1)
         # Simulate IDs from an unrelated SQLite database; all foreign keys are rewritten through the export map.
         exported['records'][0]['id']=88001
         exported['tasks'][0]['id']=77001
         exported['units'][0]['id']=66001
         exported['resources'][0]['id']=55001
+        for movement in exported.get('resource_movements',[]):
+            if movement.get('resource_id') is not None: movement['resource_id']=55001
         for item in exported['project_assignments']:
             item['project_id']=88001
             if item.get('unit_id') is not None: item['unit_id']=66001
@@ -372,6 +375,8 @@ class CoreApiTests(unittest.TestCase):
         self.assertIn('Einsatzteam',[a['notes'] for a in fresh['project_assignments']])
         self.assertIn('Materialpaket',[a['notes'] for a in fresh['project_assignments']])
         self.assertEqual(fresh['news']['items'][0]['title'],'Testmeldung')
+        self.assertGreaterEqual(len(fresh['resource_movements']),1)
+        self.assertEqual(fresh['resource_movements'][0]['resource_id'],new_resource)
         self.assertEqual(fresh['map_locations'][0]['task_id'],new_task)
 
     def test_portable_import_rejects_unsafe_news_links(self):

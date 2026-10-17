@@ -409,6 +409,7 @@ def build_export(con):
         'map_locations':rows('SELECT l.*,p.title AS project_title,t.title AS task_title,u.name AS unit_name,rs.name AS resource_name FROM map_locations l LEFT JOIN records p ON p.id=l.project_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN resources rs ON rs.id=l.resource_id ORDER BY l.id'),
         'units':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id')],
         'resources':rows('SELECT * FROM resources ORDER BY id'),
+        'resource_movements':rows('SELECT id,resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,reverses_movement_id,created_at FROM resource_movements ORDER BY id'),
         'project_assignments':rows('SELECT * FROM project_assignments ORDER BY id'),
         'settings':get_settings(con),
         'geodata':{('germany_states' if r['key']=='germany-states' else r['key']):json.loads(r['geojson']) for r in con.execute('SELECT key,geojson FROM geodata_assets')},
@@ -442,12 +443,18 @@ def validate_portable_import(payload):
         raise ValueError('Ungültiges oder nicht unterstütztes Importformat (unterstützt werden Schema 1 und 2).')
     version=payload['schema_version']
     names=('tasks','records','map_locations') + (('units','resources','project_assignments') if version>=2 else ())
-    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000}
+    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000}
     data={}
     for name in names:
         arr=payload.get(name,[])
         if not isinstance(arr,list) or len(arr)>limits[name]: raise ValueError(f'{name}: ungültige Liste oder zu viele Einträge.')
         data[name]=arr
+    if version>=2:
+        movements=payload.get('resource_movements',[])
+        if not isinstance(movements,list) or len(movements)>limits['resource_movements']: raise ValueError('resource_movements: ungültige Liste oder zu viele Einträge.')
+        data['resource_movements']=movements
+    else:
+        data['resource_movements']=[]
     if version>=2:
         for name in ('units','resources','project_assignments'):
             if name not in payload: raise ValueError(f'Schema 2 benötigt das Feld {name}.')
@@ -481,6 +488,20 @@ def validate_portable_import(payload):
     tasks_by_id={str(x['id']):x for x in data['tasks'] if x.get('id') is not None}
     units_by_id={str(x['id']):x for x in data.get('units',[]) if x.get('id') is not None}
     resources_by_id={str(x['id']):x for x in data.get('resources',[]) if x.get('id') is not None}
+    seen_movement_ids=set()
+    for movement in data.get('resource_movements',[]):
+        required=('id','resource_name','movement_type','quantity_delta','quantity_after','unit','created_at')
+        if not isinstance(movement,dict) or any(field not in movement or movement[field] is None for field in required): raise ValueError('Ressourcenbewegung ist unvollständig.')
+        if movement.get('movement_type') not in ('opening_balance','receipt','consumption','adjustment','import_snapshot','reversal'): raise ValueError('Ressourcenbewegung enthält einen unbekannten Typ.')
+        try: delta=float(movement.get('quantity_delta')); after=float(movement.get('quantity_after'))
+        except (TypeError,ValueError): raise ValueError('Ressourcenbewegung enthält eine ungültige Menge.')
+        if not math.isfinite(delta) or abs(delta)>1e12 or not math.isfinite(after) or after<0 or after>1e12: raise ValueError('Ressourcenbewegung enthält eine ungültige Menge.')
+        if not str(movement.get('resource_name','')).strip() or not str(movement.get('unit','')).strip(): raise ValueError('Ressourcenbewegung benötigt Ressourcenname und Einheit.')
+        resource_ref=movement.get('resource_id')
+        if resource_ref not in (None,'') and str(resource_ref) not in ids.get('resources',set()): raise ValueError('Ressourcenbewegung verweist auf eine unbekannte Ressource.')
+        reverse_ref=movement.get('reverses_movement_id')
+        if reverse_ref not in (None,'') and str(reverse_ref) not in seen_movement_ids: raise ValueError('Rücknahme muss auf eine vorherige Ressourcenbewegung verweisen.')
+        seen_movement_ids.add(str(movement['id']))
     projects=_legacy_lookup([r for r in data['records'] if r.get('module')=='projects'],'title','Projekte')
     tasks=_legacy_lookup(data['tasks'],'title','Aufgaben')
     units=_legacy_lookup(data.get('units',[]),'name','Personenprofile')
@@ -556,7 +577,7 @@ def portable_import_preview(payload):
     summary={'schema_version':payload.get('schema_version') if isinstance(payload,dict) else None,
              'tasks':len(arr('tasks')),'records':len(records),'records_by_module':by_module,
              'map_locations':len(arr('map_locations')),'units':len(arr('units')),
-             'resources':len(arr('resources')),'project_assignments':len(arr('project_assignments')),
+             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'project_assignments':len(arr('project_assignments')),
              'settings':len(payload.get('settings',{})) if isinstance(payload,dict) and isinstance(payload.get('settings',{}),dict) else 0,
              'geodata':len(geo),'geodata_features':sum(len(v.get('features',[])) for v in geo.values() if isinstance(v,dict) and isinstance(v.get('features'),list)),
              'news_items':len(news.get('items',[])) if isinstance(news.get('items',[]),list) else 0,
@@ -621,11 +642,22 @@ def apply_portable_import(con, payload, now):
         for u in data['units']:
             cur=con.execute('INSERT INTO units(name,role,status,biography,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(u['name']).strip(),str(u.get('role',''))[:120],str(u.get('status','aktiv'))[:40],str(u.get('biography',''))[:100000],str(u.get('region',''))[:180],json.dumps(u.get('tags',[]),ensure_ascii=False),str(u.get('created_at',now))[:80],str(u.get('updated_at',now))[:80]))
             if u.get('id') is not None: unit_map[str(u['id'])]=cur.lastrowid
-        for r in data['resources']:
+        movement_resource_ids={str(m.get('resource_id')) for m in data.get('resource_movements',[]) if m.get('resource_id') is not None}
+    for r in data['resources']:
             cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(str(r['name']).strip(),str(r.get('category','Allgemein'))[:80],float(r.get('quantity',0)),str(r.get('unit','Stück'))[:40],str(r.get('location',''))[:180],str(r.get('notes',''))[:10000],str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
             resource_row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
-            con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,resource_row['name'],'import_snapshot',resource_row['quantity'],resource_row['quantity'],resource_row['unit'],'Bestand aus Schema-2-Import übernommen; historische Bewegungen sind unbekannt.','import-snapshot:'+uuid.uuid4().hex,now))
+            if str(r.get('id')) not in movement_resource_ids:
+                con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(cur.lastrowid,resource_row['name'],'import_snapshot',resource_row['quantity'],resource_row['quantity'],resource_row['unit'],'Bestand aus Schema-2-Import übernommen; historische Bewegungen sind unbekannt.','import-snapshot:'+uuid.uuid4().hex,now))
             if r.get('id') is not None: resource_map[str(r['id'])]=cur.lastrowid
+    movement_map={}
+    for movement in data.get('resource_movements',[]):
+        source_resource=movement.get('resource_id')
+        mapped_resource=resource_map.get(str(source_resource)) if source_resource not in (None,'') else None
+        reverse_source=movement.get('reverses_movement_id')
+        mapped_reverse=movement_map.get(str(reverse_source)) if reverse_source not in (None,'') else None
+        cur=con.execute('INSERT INTO resource_movements(resource_id,resource_name,movement_type,quantity_delta,quantity_after,unit,notes,idempotency_key,reverses_movement_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            (mapped_resource,str(movement['resource_name'])[:180],str(movement['movement_type']),float(movement['quantity_delta']),float(movement['quantity_after']),str(movement['unit'])[:40],str(movement.get('notes',''))[:2000],'portable-import:'+uuid.uuid4().hex,mapped_reverse,str(movement['created_at'])[:80]))
+        movement_map[str(movement['id'])]=cur.lastrowid
     def resolve_ref(item,field,mapping,legacy_name,lookup):
         if item.get(field) not in (None,''):
             key=str(item[field])
