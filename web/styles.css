@@ -126,3 +126,252 @@ h1{font-weight:760;letter-spacing:.075em;text-transform:uppercase}
  .topbar{height:62px}.layout aside{top:62px}.main{padding:20px 12px 30px}.page-head{padding-bottom:15px}.page-head:after{width:42px}h1{font-size:clamp(25px,7vw,30px);letter-spacing:.055em}.panel-head{padding:13px 14px}.panel-head:before{top:12px;bottom:12px}.map-wrap{min-height:300px}.map-grid{background-size:28px 28px}.dashboard-metric strong{font-size:22px}.dashboard-project:hover{transform:none}.nav button{min-height:40px}.nav button.active:after{top:9px;bottom:9px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transform:none!important;scroll-behavior:auto!important}}
+
+
+/* KOR NEXUS // tactical atlas pass */
+.map-wrap{
+ border:1px solid #593238;
+ box-shadow:inset 0 0 0 1px #b83b4412,inset 0 0 64px #a7192410,0 0 28px #0008;
+ background:
+  radial-gradient(ellipse at 50% 45%,#2a1b20 0,#17191c 48%,#0c1013 100%);
+}
+.map-grid{
+ background-image:
+  linear-gradient(#df50500b 1px,transparent 1px),
+  linear-gradient(90deg,#df50500b 1px,transparent 1px),
+  linear-gradient(180deg,transparent 0%,#e23c3c08 50%,transparent 100%);
+ background-size:32px 32px,32px 32px,100% 5px;
+}
+.map-wrap:before,.map-wrap:after{background:#c24b5530;box-shadow:0 0 12px #c52b3820}
+.geographic-map{overflow:hidden;filter:drop-shadow(0 0 5px #b6243020)}
+.geo-country{
+ fill:#24282d;
+ fill-opacity:.96;
+ stroke:#8a444b;
+ stroke-width:.7;
+ vector-effect:non-scaling-stroke;
+}
+.geo-country:hover{fill:#392329;stroke:#df6b72}
+.geo-country.geo-germany{
+ fill:#7d2633;
+ fill-opacity:.78;
+ stroke:#f0c37a;
+ stroke-width:1.4;
+ filter:drop-shadow(0 0 4px #b93648);
+}
+.geo-state{
+ fill:#d12f4517;
+ stroke:#e4b873;
+ stroke-width:1.2;
+ vector-effect:non-scaling-stroke;
+}
+.geo-state:hover,.geo-state:focus{
+ fill:#c8293c70;
+ stroke:#ffe0a0;
+ filter:drop-shadow(0 0 4px #d53548);
+}
+.map-controls .btn{backdrop-filter:blur(8px);background:#0d1013e8;border-color:#51343a}
+.map-controls .active{background:#4a1822;border-color:#d1a96a;box-shadow:0 0 16px #b92d3a24}
+.map-stamp,.map-scale{
+ padding:6px 8px;
+ background:#0a0d10c9;
+ border:1px solid #34373b;
+ color:#c0b5b7;
+}
+.map-pin{
+ border-color:#d44a57;
+ background:#100e12ed;
+ color:#f0d6d8;
+ box-shadow:0 0 0 3px #d43a4a20,0 0 15px #bc263530,0 5px 14px #000b;
+}
+.map-pin:before{background:#ed4a5b;box-shadow:0 0 11px #ed4a5b}
+.map-pin[data-status="aktiv"]{border-color:#e4bd6f}
+.map-pin[data-status="blockiert"]{border-color:#ff5968;box-shadow:0 0 0 3px #ff344520,0 0 18px #ff34452e}
+.map-pin[data-status="abgeschlossen"]{border-color:#81bda0}
+.map-pin:hover,.map-pin:focus-visible{background:#451923;color:#fff;outline:1px solid #f0c37a}
+.map-footer{border-top-color:#473237}
+@media(prefers-reduced-motion:no-preference){
+ .geo-country{transition:fill .18s ease,stroke .18s ease}
+ .map-pin{transition:background .18s ease,box-shadow .18s ease}
+}
+
+
+/* KOR NEXUS // command citadel redesign — structural HUD, not just recoloring */
+:root{
+ --bg:#08090c;
+ --panel:#101116;
+ --panel2:#15161d;
+ --line:#34313b;
+ --muted:#a19ba9;
+ --text:#f0edf3;
+ --red:#e1263e;
+ --gold:#d8b56c;
+ --green:#8bc9a6;
+ --grid-line:#e1263e13;
+ --danger-glow:#e1263e30;
+ --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+html{scroll-behavior:smooth;scrollbar-color:#63212c #090a0d}
+body{
+ background:
+  radial-gradient(ellipse at 82% -14%,#6d172a2b,transparent 42%),
+  radial-gradient(ellipse at 2% 40%,#a47b1810,transparent 34%),
+  linear-gradient(135deg,#08090c,#0b0c11 54%,#09090c);
+ color:var(--text);
+}
+body:after{
+ content:"";position:fixed;inset:0;pointer-events:none;z-index:50;opacity:.13;
+ background:repeating-linear-gradient(0deg,transparent 0 3px,#000 4px);
+ mix-blend-mode:multiply;
+}
+.topbar{
+ position:sticky;top:0;z-index:30;height:72px;
+ background:linear-gradient(90deg,#100b10f5,#0b0c10f2 62%,#17100ff2);
+ border-bottom:1px solid #6c2734;
+ box-shadow:0 8px 28px #0009,0 1px #e1263e22;
+}
+.topbar:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--red),var(--gold),transparent);opacity:.7}
+.brand-mark{border-color:var(--gold);color:var(--gold);box-shadow:0 0 17px #d8b56c1b;transform:rotate(45deg)}
+.brand-title{letter-spacing:.19em;font-weight:700}
+.brand-sub{color:#b6a9b4}
+.connection{border-color:#375c47;background:#0c1712;color:#9ce4b7}
+.connection.offline{border-color:#806637;background:#1b160c;color:#f2ce81}
+.lang,.icon-btn{background:#111117;border-color:#45404d}
+.layout{grid-template-columns:258px minmax(0,1fr)}
+aside{
+ position:relative;background:linear-gradient(180deg,#100e14,#0a0b0f 75%);
+ border-right:1px solid #3e2732;padding:25px 13px;
+}
+aside:before{content:"";position:absolute;right:-1px;top:0;bottom:0;width:1px;background:linear-gradient(180deg,var(--gold),var(--red) 35%,transparent 90%);opacity:.4}
+.label,.eyebrow,.kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+.nav{gap:6px}
+.nav button{
+ position:relative;overflow:hidden;min-height:54px;padding:11px 10px;
+ border:1px solid transparent;border-left:2px solid transparent;
+ background:linear-gradient(100deg,#ffffff03,transparent);
+ transition:background .16s ease,border-color .16s ease,color .16s ease;
+}
+.nav button:before{content:"";position:absolute;left:0;top:0;bottom:0;width:35%;background:linear-gradient(90deg,#e1263e0c,transparent);opacity:0}
+.nav button:hover{border-color:#49303b;background:#1a1118;color:#fff}
+.nav button:hover:before,.nav button.active:before{opacity:1}
+.nav button.active{
+ border-color:#60303b;border-left:2px solid var(--red);
+ background:linear-gradient(90deg,#4b1322 0%,#1b1018 72%,#101015);
+ box-shadow:inset 0 0 22px #e1263e0b,0 4px 14px #0004;
+}
+.nav button.active:after{content:"";position:absolute;right:0;top:9px;bottom:9px;width:2px;background:var(--gold);box-shadow:0 0 8px #d8b56c80}
+.nav .glyph{color:#ed4c5c;text-shadow:0 0 12px #e1263e40}
+.nav .num{color:#a69aab}
+.status-card{position:relative;border-color:#44313b;background:linear-gradient(145deg,#17121a,#0e0e13);box-shadow:inset 0 1px #ffffff08}
+.status-head{color:#e4d7e0}
+.status-line{border-bottom:1px solid #ffffff07}
+.motto{border-top:1px solid #34232e;margin-top:24px;padding-top:18px}
+.motto-mark{border-color:var(--gold);color:var(--gold);box-shadow:0 0 14px #d8b56c1b}
+.main{padding-top:31px}
+.page-head{position:relative;padding-bottom:18px;border-bottom:1px solid #33252f}
+.page-head:after{content:"";position:absolute;left:0;bottom:-1px;width:94px;height:2px;background:linear-gradient(90deg,var(--red),var(--gold));box-shadow:0 0 12px #e1263e66}
+.eyebrow{color:#bcb0bd}
+h1{letter-spacing:.105em;text-shadow:0 0 26px #e1263e10}
+h1 .period{color:var(--red);text-shadow:0 0 16px #e1263e99}
+.panel{
+ position:relative;overflow:hidden;
+ border:1px solid #3b303c;
+ background:linear-gradient(145deg,#15131a 0%,#0e0f14 70%,#111015);
+ box-shadow:0 14px 34px #0004,inset 0 1px #ffffff07;
+}
+.panel:after{content:"";position:absolute;top:0;right:0;width:48px;height:1px;background:var(--gold);opacity:.72;pointer-events:none}
+.panel-head{background:linear-gradient(90deg,#e1263e09,transparent 55%);border-bottom-color:#382632}
+.panel-head:before{background:linear-gradient(180deg,var(--gold),var(--red));box-shadow:0 0 9px #e1263e30}
+.panel h2{letter-spacing:.035em;text-transform:uppercase}
+.region-label{color:var(--gold)}
+.btn{
+ border:1px solid #9b3547;
+ background:linear-gradient(180deg,#541827,#281019);
+ box-shadow:inset 0 1px #ffffff0b,0 3px 9px #0004;
+ transition:transform .14s ease,background .14s ease,border-color .14s ease,box-shadow .14s ease;
+}
+.btn:hover{border-color:#ef6576;background:linear-gradient(180deg,#762238,#3a1320);box-shadow:0 0 17px #e1263e21}
+.btn:active{transform:translateY(1px)}
+.btn.ghost{border-color:#51404c;background:linear-gradient(180deg,#19171e,#101116);color:#e6dce7}
+.btn.ghost:hover{border-color:#9c7c4b;background:#211b20}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{
+ outline:2px solid var(--gold);outline-offset:2px;
+}
+.input,select.input,textarea.input{
+ background:linear-gradient(180deg,#0a0b10,#101016);border-color:#48404d;color:#f2edf3;
+}
+.input:focus,.input:focus-visible{border-color:#e65a6c;box-shadow:0 0 0 3px #e1263e20,0 0 16px #e1263e0b}
+.map-wrap{border-color:#67303d;box-shadow:inset 0 0 50px #e1263e0a,0 8px 24px #0006}
+.map-footer{background:#0b0c10;border-top-color:#472a35}
+.dashboard-metric{border-top-color:var(--red);background:linear-gradient(145deg,#1b151d,#0c0d12)}
+.dashboard-metric strong{color:#f5edf4;text-shadow:0 0 16px #e1263e1c}
+.resource-card,.assignment-card,.news-card,.module-card,.dashboard-project{
+ border-color:#3a303d;background:linear-gradient(145deg,#17141b,#0e0f14);
+}
+.resource-card:hover,.assignment-card:hover,.news-card:hover,.module-card:hover,.dashboard-project:hover{
+ border-color:#84505b;box-shadow:0 8px 22px #0005,0 0 18px #e1263e0a;
+}
+.toast{border-color:#7a3944;background:#211219;box-shadow:0 12px 32px #0009}
+.toast.error{border-color:#e1263e}
+.offline-note{border-color:#82653a;background:#1d170d;color:#f1d79b}
+.modal-box{background:#111017;border-color:#70404a;box-shadow:0 25px 90px #000c}
+.modal-box h2{color:#f6eaf1}
+hr,.side-rule{border-color:#3b2833;background:#3b2833}
+@media(max-width:1050px){.layout{grid-template-columns:224px minmax(0,1fr)}}
+@media(max-width:720px){
+ .topbar{height:62px;padding:0 12px;gap:10px}
+ .brand{min-width:0;gap:9px}.brand-sub{letter-spacing:.06em;font-size:8px}.brand-title{font-size:12px;letter-spacing:.1em}
+ .layout{grid-template-columns:minmax(0,1fr)}
+ aside{position:sticky;top:62px;z-index:20;padding:7px 8px;border-right:0;border-bottom:1px solid #482b36}
+ aside>.label,aside>.side-rule,aside>.status-card,aside>.motto{display:none}
+ .nav{display:flex;overflow-x:auto;gap:5px;scrollbar-width:thin;padding-bottom:2px}
+ .nav button{flex:0 0 auto;width:auto;min-height:40px;padding:7px 10px;gap:7px}
+ .nav button>span:nth-child(2){display:block}.nav small{display:none!important}.nav strong{font-size:9px}
+ .nav .num{display:none}
+ .main{padding:18px 10px 26px}
+ .page-head{align-items:flex-start}.head-meta{font-size:9px}
+ .panel{box-shadow:0 8px 20px #0005}
+}
+@media(prefers-reduced-motion:reduce){
+ html{scroll-behavior:auto}
+ .nav button,.btn,.panel,.resource-card,.assignment-card,.news-card,.module-card,.dashboard-project{transition:none!important}
+}
+
+
+/* KOR NEXUS // digital workbench command deck */
+.workbench-view{display:grid;gap:18px;min-width:0}
+.workbench-banner{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:24px 26px;background:linear-gradient(110deg,#25101a,#121017 55%,#17140f);border-color:#63303d}
+.workbench-banner h2{font-size:clamp(20px,3vw,30px);letter-spacing:.12em;margin:7px 0}
+.workbench-banner .period{color:var(--gold)}
+.workbench-banner .subtitle{max-width:680px;margin-bottom:0}
+.workbench-live{display:grid;gap:8px;justify-items:end;font:10px var(--mono);letter-spacing:.12em;color:#b8aebc;white-space:nowrap}
+.workbench-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.workbench-metrics .dashboard-metric{min-width:0}
+.workbench-metrics .dashboard-metric strong{font-size:clamp(22px,3vw,32px)}
+.workbench-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.8fr);gap:18px;align-items:start}
+.workbench-editor,.workbench-side{min-width:0}
+.workbench-editor .entry-form,.workbench-side .entry-form{padding:18px}
+.workbench-editor .records-toolbar{padding:0 18px}
+.workbench-editor .record-grid{padding:0 18px 18px}
+.workbench-note{min-width:0}
+.workbench-note p{white-space:pre-wrap;overflow-wrap:anywhere}
+.workbench-side>.panel-head.compact{border-top:1px solid #3b2833}
+.workbench-launcher{min-width:0}
+.workbench-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:18px}
+.workbench-shortcut{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-height:112px;padding:14px;text-align:left;color:var(--text);background:linear-gradient(145deg,#1b141c,#0c0d12);border:1px solid #3e303e;position:relative;overflow:hidden;cursor:pointer}
+.workbench-shortcut:before{content:"";position:absolute;top:0;left:0;width:38px;height:2px;background:var(--red);box-shadow:0 0 10px #e1263e50}
+.workbench-shortcut>span{font-size:23px;color:var(--gold);line-height:1}
+.workbench-shortcut b{font-size:11px;letter-spacing:.1em}
+.workbench-shortcut small{font-size:10px;color:#b3a8b7;line-height:1.5}
+.workbench-shortcut:hover,.workbench-shortcut:focus-visible{border-color:var(--gold);background:linear-gradient(145deg,#32131e,#141018);box-shadow:0 0 20px #e1263e12}
+.workbench-shortcut:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media(max-width:1100px){.workbench-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.workbench-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.workbench-banner{padding:16px;flex-direction:column}.workbench-live{display:flex;align-items:center;justify-items:start}.workbench-grid{grid-template-columns:minmax(0,1fr)}.workbench-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.workbench-shortcuts{padding:12px;gap:8px}.workbench-shortcut{min-height:100px;padding:11px}.workbench-editor .entry-form,.workbench-side .entry-form{padding:12px}.workbench-editor .records-toolbar{padding:0 12px}.workbench-editor .record-grid{padding:0 12px 12px}}
+
+/* KOR-NEXUS Atlas 1.20 — operational filter deck */
+.atlas-tools{margin:18px 0 12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,rgba(216,181,108,.055),transparent 60%),var(--panel2)}
+.atlas-tool-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.atlas-tool-heading>div{display:grid;gap:4px}.atlas-tool-heading strong{font-size:1rem;letter-spacing:.04em}.atlas-filter-summary{font-size:.78rem;color:var(--muted);padding-top:9px;font-variant-numeric:tabular-nums}.map-filter-row{align-items:center}.map-filter-row>*{min-width:0;flex:1}.map-location-row{align-items:flex-start}.map-location-row .location-info{min-width:0;overflow-wrap:anywhere}.map-pin:focus-visible,.state-button:focus-visible,.map-mode:focus-visible{outline:2px solid var(--gold);outline-offset:3px}.map-pin{max-width:180px}.map-pin span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.geodata-import{display:grid;gap:8px}.atlas-tools .btn{white-space:nowrap}
+@media(max-width:720px){.atlas-tool-heading{align-items:flex-start;flex-wrap:wrap}.map-filter-row{display:grid;grid-template-columns:1fr}.atlas-filter-summary{line-height:1.5}.atlas-tools{padding:11px}.map-pin{max-width:120px}}
+
+/* Command deck: keyboard-first navigation for the local command hub. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.command-open{font-size:21px}.command-palette{width:min(680px,calc(100vw - 28px));max-width:none;max-height:min(78vh,760px);padding:0;border:1px solid #51404a;background:#101115;color:var(--text);box-shadow:0 28px 100px #000b}.command-palette::backdrop{background:#030407c9;backdrop-filter:blur(7px)}.command-palette-shell{display:grid;gap:14px;padding:20px}.command-palette-head{display:flex;align-items:center;justify-content:space-between;gap:16px}.command-palette-head h2{margin:4px 0 0;font-size:18px;letter-spacing:.13em}.command-search{width:100%;min-height:48px;border-color:#5a3a46;background:#090a0e;font-size:15px}.command-results{display:grid;gap:5px;max-height:48vh;overflow:auto}.command-result{display:grid;grid-template-columns:34px minmax(0,1fr) 20px;align-items:center;gap:12px;text-align:left;padding:11px 12px;background:#17171d;border:1px solid #2f2a33;color:var(--text);min-width:0}.command-result:hover,.command-result:focus-visible{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--red);background:linear-gradient(100deg,#30151f,#17171d)}.command-result-glyph{display:grid;place-items:center;width:32px;height:32px;border:1px solid #51313d;color:var(--gold);font-size:18px}.command-result-copy{display:grid;gap:2px;min-width:0}.command-result-copy strong{font-size:11px;letter-spacing:.09em}.command-result-copy small{font-size:11px;color:var(--muted);line-height:1.4}.command-result-enter{color:var(--gold);text-align:center}.command-empty{padding:18px}.command-palette-foot{display:flex;flex-wrap:wrap;gap:14px;color:var(--muted);font-size:10px}.command-palette kbd{display:inline-block;min-width:18px;padding:2px 5px;text-align:center;border:1px solid #4b3c45;background:#1a171d;color:var(--text);font:inherit}@media(max-width:520px){.command-palette-shell{padding:13px;gap:10px}.command-palette-head h2{font-size:15px}.command-result{grid-template-columns:28px minmax(0,1fr) 16px;padding:9px}.command-result-glyph{width:27px;height:27px}.command-palette-foot{gap:8px}}

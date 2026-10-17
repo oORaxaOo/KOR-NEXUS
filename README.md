@@ -5,7 +5,7 @@
 ## Projekt- und Repository-Status
 
 - **Kanonischer Quellbaum:** Die versionierten Projektdateien im Repository. Ursprüngliche Upload-Archive bleiben unter `archive/legacy-uploads/` als Herkunfts- und Wiederherstellungsreferenz erhalten; sie sind nicht die aktive Quelle.
-- **Transfer-Branch:** `transfer/kor-nexus-1.20.0`. Wiederherstellung und Bereinigung wurden dort durchgeführt; der Transferprozess hat `main` nicht verändert.
+- **Arbeitsbranch:** `transfer/kor-nexus-1.20.0`. Die vollständige Wiederherstellung ist bereits auch in `main` angekommen. Dieser Branch dient für weitere Änderungen und Verifikation; Änderungen werden hier zuerst geprüft und erst nach Review zusammengeführt.
 - **Release-Prüfungen:** `.github/workflows/release.yml` führt portable Qualitätsprüfungen, Browser-Tests und einen nativen Arch-Linux-Paketbau mit isoliertem Installationstest aus. Der Workflow lädt Artefakte hoch, erzeugt aber nicht automatisch GitHub-Releases oder Tags.
 - **Bereits erfolgreich geprüfte Gates:** 29 Kern-API-Tests, `bash scripts/ci.sh quick`, der isolierte Benutzer-Installationstest (inklusive Pfaden mit Leerzeichen, belegtem Standard-Port, Doppelstart, Stop und Datenerhalt bei Deinstallation) sowie die Offline-Weltkarte mit 177 GeoJSON-Features und verifizierter Prüfsumme.
 - **Aktueller Gesamtstatus:** Für den endgültigen Release-Status ist der neueste [GitHub-Actions-Lauf dieses Branches](https://github.com/oORaxaOo/KOR-NEXUS/actions?query=branch%3Atransfer%2Fkor-nexus-1.20.0) maßgeblich; ein älterer grüner Job ersetzt nicht das Ergebnis des neuesten Commits.

@@ -243,6 +243,27 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(fresh['news']['items'][0]['title'],'Testmeldung')
         self.assertEqual(fresh['map_locations'][0]['task_id'],new_task)
 
+    def test_portable_import_rejects_unsafe_news_links(self):
+        self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})
+        payload=self.req('/api/export')[1]
+        payload['news']['items']=[{
+            'id':'unsafe-link','source_key':'imported','source_name':'Imported source',
+            'title':'Unsafe link test','summary':'','url':'javascript:alert(1)',
+            'published':'','fetched_at':app.utcnow()
+        }]
+        before=self.req('/api/export')[1]
+        backups_before=len(list(app.BACKUP_DIR.glob('kor-*.sqlite3')))
+        status,preview=self.req('/api/import/preview','POST',{'data':payload})
+        self.assertEqual(status,200)
+        self.assertFalse(preview['valid'])
+        status,result=self.req('/api/import','POST',{'data':payload})
+        self.assertEqual(status,400)
+        self.assertIn('HTTP(S)',result['error'])
+        after=self.req('/api/export')[1]
+        self.assertEqual(after['tasks'],before['tasks'])
+        self.assertEqual(after['news']['items'],before['news']['items'])
+        self.assertEqual(len(list(app.BACKUP_DIR.glob('kor-*.sqlite3'))),backups_before)
+
     def test_invalid_portable_reference_is_rejected_before_backup_or_mutation(self):
         self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})
         before=self.req('/api/export')[1]
@@ -391,6 +412,18 @@ class CoreApiTests(unittest.TestCase):
         status,settings=self.req('/api/settings','PATCH',{'unit_label_singular':'Mitglied','unit_label_plural':'Mitglieder'})
         self.assertEqual(status,200); self.assertEqual(settings['settings']['unit_label_plural'],'Mitglieder')
         self.assertEqual(self.req('/api/settings','PATCH',{'unit_label_plural':''})[0],400)
+
+    def test_resource_and_assignment_quantities_reject_non_finite_values(self):
+        _,project=self.req('/api/records','POST',{'module':'projects','title':'Mengenvalidierung'})
+        _,unit=self.req('/api/units','POST',{'name':'Testmitglied'})
+        for value in (float('nan'),float('inf'),float('-inf')):
+            status,_=self.req('/api/resources','POST',{'name':'Ungültige Menge','quantity':value})
+            self.assertEqual(status,400, f'Resource quantity {value!r} must be rejected as client input')
+            status,_=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'unit_id':unit['item']['id'],'quantity':value})
+            self.assertEqual(status,400, f'Assignment quantity {value!r} must be rejected as client input')
+        with app.db_connect() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM resources WHERE name='Ungültige Menge'").fetchone()[0],0)
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM project_assignments').fetchone()[0],0)
 
     def test_project_dashboard_joins_by_id_filters_and_persists(self):
         _,project=self.req('/api/records','POST',{'module':'projects','title':'Doppelname','region':'Nord'})

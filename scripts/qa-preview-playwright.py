@@ -13,13 +13,18 @@ HTML_SOURCE=ROOT/'web/index.html';CSS_SOURCE=ROOT/'web/styles.css';JS_SOURCE=ROO
 DESKTOP_SHOT=ROOT/'preview'/'hud-redesign-desktop.png'
 MOBILE_SHOT=ROOT/'preview'/'hud-redesign-mobile.png'
 html=HTML_SOURCE.read_text(encoding='utf-8');css=CSS_SOURCE.read_text(encoding='utf-8');js=JS_SOURCE.read_text(encoding='utf-8')
+assert js.count('async function loadGeographicData()')==1, 'Geodaten-Lader darf nur einmal definiert sein'
+assert 'function mercatorY(lat)' in js and 'Math.atan(Math.sinh(y))' in js, 'Mercator-Projektion und inverse Koordinatenumrechnung müssen vorhanden sein'
+assert 'function filteredMapLocations()' in js and 'function exportAtlasCsv()' in js, 'Atlas muss gemeinsame Markerfilter und CSV-Export anbieten'
+assert 'function validateStateGeoJSON(geo)' in js, 'GeoJSON-Import muss vor dem Speichern validiert werden'
+assert 'id="mapLocFilterKind"' in html and 'id="exportAtlasCsv"' in html, 'Atlas-Werkzeuge müssen im UI vorhanden sein'
 html=html.replace('<link rel="stylesheet" href="./styles.css">',f'<style>\n{css}\n</style>',1)
 html=html.replace('<script src="./app.js" defer></script>','<!-- API mock is installed before the application script for isolated UI tests -->',1)
 mock=r'''<script>
 const __state={stateGeo:null,tasks:[],records:[{id:900,module:'projects',title:'QA-existing-persisted-project',body:'Loaded from the mock database',region:'SYSTEM',tags:['persisted'],created_at:new Date().toISOString(),updated_at:new Date().toISOString()}],settings:{language:'de',backup_keep:'12',backup_interval_minutes:'30',last_news_refresh:''},backups:[],news:[],sources:[],nextTask:1,nextRecord:1,nextBackup:1,units:[],resources:[],assignments:[],nextUnit:1,nextResource:1,nextAssignment:1,locations:[],nextLocation:1};
-window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;
+window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;window.__qaRequests=[];
 window.fetch=async (input,init={})=>{
- const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();let body={};try{body=init.body?JSON.parse(init.body):{}}catch{}
+ const u=new URL(input,'http://127.0.0.1:8765'),path=u.pathname.replace(/^\/api/,''),method=(init.method||'GET').toUpperCase();window.__qaRequests.push({url:String(input),path,search:u.search,method});let body={};try{body=init.body?JSON.parse(init.body):{}}catch{}
  const now=()=>new Date().toISOString();
  const res=(data,status=200)=>Promise.resolve(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}));
  const rec=(r)=>({...r});
@@ -33,7 +38,7 @@ window.fetch=async (input,init={})=>{
  if(path==='/tasks'&&method==='POST'){const item={id:__state.nextTask++,title:body.title,area:body.area||'SYSTEM',done:false,created_at:now(),updated_at:now()};__state.tasks.push(item);return res({item},201)}
  let m=path.match(/^\/tasks\/(\d+)$/);if(m&&method==='PATCH'){const item=__state.tasks.find(x=>x.id===+m[1]);if(!item)return res({error:'Aufgabe nicht gefunden'},404);Object.assign(item,body,{updated_at:now()});return res({item})}if(m&&method==='DELETE'){__state.tasks=__state.tasks.filter(x=>x.id!==+m[1]);return res({ok:true})}
  if(path==='/records'&&method==='GET'){const module=u.searchParams.get('module');return res({items:__state.records.filter(r=>r.module===module).sort((a,b)=>b.id-a.id).map(rec)})}
- if(path==='/locations'&&method==='GET')return res({items:__state.locations.map(x=>({...x,project_title:__state.records.find(r=>r.id===x.project_id)?.title||null})),projection:'equirectangular-marker-overlay',offline:true});
+ if(path==='/locations'&&method==='GET')return res({items:__state.locations.map(x=>({...x,project_title:__state.records.find(r=>r.id===x.project_id)?.title||null})),projection:'mercator-marker-overlay',offline:true});
  if(path==='/locations'&&method==='POST'){const item={id:__state.nextLocation++,...body,created_at:now(),updated_at:now()};__state.locations.push(item);return res({item},201)}
  m=path.match(/^\/locations\/(\d+)$/);if(m&&method==='PATCH'){const item=__state.locations.find(x=>x.id===+m[1]);if(!item)return res({error:'Standort nicht gefunden'},404);Object.assign(item,body,{updated_at:now()});return res({item})}if(m&&method==='DELETE'){__state.locations=__state.locations.filter(x=>x.id!==+m[1]);return res({ok:true})}
  if(path==='/records'&&method==='POST'){const item={id:__state.nextRecord++,...body,tags:body.tags||[],created_at:now(),updated_at:now()};__state.records.push(item);return res({item},201)}
@@ -85,16 +90,48 @@ with sync_playwright() as p:
   page.set_content(html,wait_until='domcontentloaded',timeout=10000)
   page.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
   assert page.title()=='KOR-NEXUS // COMMAND NEXUS'
-  assert page.locator('#nav button').count()==7
+  assert page.locator('#nav button').count()==8
   assert page.locator('#stateGrid .state-button').count()==16
-  print('PASS: UI startet, 7 Module und 16 Bundesländerindex-Elemente sind sichtbar')
+  page.locator('#commandPaletteBtn').click();page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('nachrichten');assert page.locator('#commandResults .command-result').count()>=1;assert 'NACHRICHTEN' in page.locator('#commandResults').inner_text();page.keyboard.press('Enter');page.wait_for_function("document.querySelector('#moduleTitle').textContent.includes('Nachrichten') || document.querySelector('#newsView').hidden===false",timeout=3000)
+  page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('task erstellen');assert page.locator('#commandResults .command-result').count()==1;page.locator('#closeCommandPalette').click();page.locator('#commandPalette').wait_for(state='hidden')
+  page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('');page.keyboard.press('ArrowDown');assert page.evaluate("document.activeElement.dataset.commandIndex")=='0';page.keyboard.press('ArrowDown');assert page.evaluate("document.activeElement.dataset.commandIndex")=='1';page.keyboard.press('ArrowUp');assert page.evaluate("document.activeElement.dataset.commandIndex")=='0';page.keyboard.press('Escape');page.locator('#commandPalette').wait_for(state='hidden')
+  page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('kein-befehl-darf-das-treffen');assert page.locator('#commandResults .command-result').count()==0;assert page.locator('.command-empty').is_visible();page.keyboard.press('Escape');page.locator('#commandPalette').wait_for(state='hidden')
+  print('PASS: Befehlssuche per Klick und Ctrl+K, Filterung, Enter-Navigation, Pfeiltasten-Fokus und Schließen')
+  print('PASS: UI startet, 8 Module und 16 Bundesländerindex-Elemente sind sichtbar')
+  page.locator('#nav [data-module=workbench]').click();page.locator('#workbenchView').wait_for(state='visible')
+  page.locator('#workbenchNoteTitle').fill('QA-Werkbanknotiz');page.locator('#workbenchNoteBody').fill('Persistenter Testinhalt');page.locator('#workbenchNoteTags').fill('QA, Architektur');page.locator('#workbenchNoteForm button[type=submit]').click()
+  page.get_by_text('QA-Werkbanknotiz').wait_for(timeout=3000);assert page.locator('#workbenchNotes .workbench-note').count()==1
+  page.locator('#workbenchSearch').fill('kein-treffer');page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===0")
+  page.locator('#workbenchSearch').fill('QA-Werkbanknotiz');page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===1")
+  page.locator('#workbenchTaskTitle').fill('QA-Werkbankaufgabe');page.locator('#workbenchTaskArea').fill('QA');page.locator('#workbenchTaskForm button[type=submit]').click()
+  page.wait_for_function("document.querySelector('#workbenchTaskTitle').value === ''",timeout=8000)
+  page.locator('#workbenchTasks .task-row').filter(has_text='QA-Werkbankaufgabe').wait_for(timeout=8000);assert page.locator('#workbenchMetrics .dashboard-metric').count()==5
+  page.locator('#workbenchTasks [data-workbench-done]').click();page.wait_for_function("!document.querySelector('#workbenchTasks').innerText.includes('QA-Werkbankaufgabe')")
+  page.once('dialog',lambda dialog: dialog.accept());page.locator('#workbenchNotes [data-workbench-delete]').click();page.wait_for_function("document.querySelectorAll('#workbenchNotes .workbench-note').length===0")
+  page.locator('#workbenchView [data-workbench-open=archive]').click();page.wait_for_function("document.querySelector('#moduleTitle').textContent==='Archiv'")
+  print('PASS: Werkbanknotizen speichern/suchen, Kennzahlen laden, Aufgaben anlegen/abschließen und Modul-Schnellzugriff')
+
+  page.locator('#nav [data-module=news]').click();page.locator('#newsView').wait_for(state='visible')
+  try: page.wait_for_function("document.querySelectorAll('#newsList .news-card').length===2",timeout=8000)
+  except PlaywrightTimeoutError: print('NEWS DIAGNOSTIC:',page.evaluate("JSON.stringify({requests:window.__qaRequests,news:document.querySelector('#newsList')?.innerText,sources:document.querySelector('#feedStatuses')?.innerText,viewHidden:document.querySelector('#newsView')?.hidden})"),'PAGE ERRORS:',errors);raise
+  assert 'QA-Nachrichtenmeldung' in page.locator('#newsList').inner_text();assert page.locator('#feedStatuses .feed-status').count()==3
+  page.locator('#newsSearch').fill('Zweite Testmeldung');page.wait_for_function("document.querySelectorAll('#newsList .news-card').length===1");assert 'Zweite Testmeldung' in page.locator('#newsList').inner_text();page.locator('#newsSearch').fill('')
+  print('PASS: Nachrichtenmodul ruft den Refresh-Endpunkt auf, zeigt Meldungen und Feedstatus und filtert die Liste')
+
   page.locator('#nav [data-module=projects]').click();page.locator('#projectDashboard').wait_for(state='visible');page.locator('#dashboardProjectList').wait_for();page.wait_for_function("document.querySelectorAll('#dashboardMetrics .dashboard-metric').length===4");assert 'QA-existing-persisted-project' in page.locator('#dashboardProjectList').inner_text();assert 'QA-Offene-Aufgabe' in page.locator('#dashboardProjectList').inner_text();assert 'QA-Mitglied' in page.locator('#dashboardProjectList').inner_text();assert 'QA-Ressource' in page.locator('#dashboardProjectList').inner_text();assert '2 Kisten' in page.locator('#dashboardProjectList').inner_text();page.locator('#dashboardStatus').select_option('blockiert');page.wait_for_function("document.querySelector('#dashboardProjectList').innerText.includes('Keine Projekte passen')");page.locator('#dashboardStatus').select_option('aktiv');page.wait_for_function("document.querySelector('#dashboardProjectList').innerText.includes('QA-existing-persisted-project')");page.locator('#dashboardRegion').select_option('Nicht vorhanden') if page.locator('#dashboardRegion option[value=\"Nicht vorhanden\"]').count() else None;print('PASS: Projekt-Dashboard zeigt ID-verknüpfte QA-Beziehungen, Ressourcen-Einheiten und leeres Filterergebnis')
   page.locator('#nav [data-module=atlas]').click()
   page.locator('#atlasRecordTitle').fill('QA Atlas-Notiz');page.locator('#atlasRecordBody').fill('Testnotiz');page.locator('#atlasRecordForm button').click()
   page.get_by_text('QA Atlas-Notiz').wait_for();assert page.locator('#atlasRecordList .module-card').count()==1
-  page.locator('#stateGrid [data-state="Hessen"]').click();assert page.locator('#regionTitle').inner_text()=='Hessen'
+  page.locator('#stateGrid [data-state="Hessen"]').click();region_title=page.locator('#regionTitle').inner_text();selected_button=page.locator('#stateGrid .state-button.selected').get_attribute('data-state') if page.locator('#stateGrid .state-button.selected').count() else None;assert region_title.strip().casefold()=='hessen',f"Regionauswahl falsch: title={region_title!r}, lang={page.locator('html').get_attribute('lang')!r}, selectedButton={selected_button!r}, pageErrors={errors!r}"
   print('PASS: Atlas-Notizen lassen sich speichern und Bundeslandauswahl ist interaktiv')
-  page.locator('#mapLocTitle').fill('QA-Kartenmarker');page.locator('#mapLocLat').fill('52.52');page.locator('#mapLocLon').fill('13.405');page.locator('#mapLocRegion').fill('Berlin');page.locator('#mapLocStatus').select_option('aktiv');page.locator('#mapLocProgress').fill('35');page.locator('#mapLocationForm button[type=submit]').click();page.get_by_text('QA-Kartenmarker').first.wait_for();assert page.locator('#mapLocationLayer .map-pin').count()==1;assert page.locator('#mapLocationList .map-location-row').count()==1;assert 'aktiv' in page.locator('#mapLocationList').inner_text();assert '35%' in page.locator('#mapLocationList').inner_text();page.locator('[data-edit-map-location]').click();page.locator('#mapLocStatus').select_option('blockiert');page.locator('#mapLocProgress').fill('55');page.locator('#mapLocSubmit').click();page.wait_for_function("document.querySelector('#mapLocationList').innerText.includes('blockiert') && document.querySelector('#mapLocationList').innerText.includes('55%')");page.locator('#mapLocSearch').fill('kein-treffer');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===0");page.locator('#mapLocSearch').fill('QA-Kartenmarker');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===1")
+  page.locator('#mapLocTitle').fill('QA-Kartenmarker');page.locator('#mapLocNotes').fill('Notiz; "geprüft"');page.locator('#mapLocLat').fill('52.52');page.locator('#mapLocLon').fill('13.405');page.locator('#mapLocRegion').fill('Berlin');page.locator('#mapLocStatus').select_option('aktiv');page.locator('#mapLocProgress').fill('35');page.locator('#mapLocationForm button[type=submit]').click();page.get_by_text('QA-Kartenmarker').first.wait_for();assert page.locator('#mapLocationLayer .map-pin').count()==1;assert page.locator('#mapLocationList .map-location-row').count()==1;assert 'aktiv' in page.locator('#mapLocationList').inner_text();assert '35%' in page.locator('#mapLocationList').inner_text();page.locator('[data-edit-map-location]').click();page.locator('#mapLocStatus').select_option('blockiert');page.locator('#mapLocProgress').fill('55');page.locator('#mapLocSubmit').click();page.wait_for_function("document.querySelector('#mapLocationList').innerText.includes('blockiert') && document.querySelector('#mapLocationList').innerText.includes('55%')");page.locator('#mapLocSearch').fill('kein-treffer');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===0");page.locator('#mapLocSearch').fill('QA-Kartenmarker');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===1")
+  page.locator('#mapLocFilterKind').select_option('Standort');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===0 && document.querySelectorAll('#mapLocationLayer .map-pin').length===0");page.locator('#mapLocFilterKind').select_option('Projekt');page.wait_for_function("document.querySelectorAll('#mapLocationList .map-location-row').length===1 && document.querySelectorAll('#mapLocationLayer .map-pin').length===1");assert '1 Treffer' in page.locator('#atlasFilterSummary').inner_text()
+  with page.expect_download() as download_info: page.locator('#exportAtlasCsv').click()
+  assert download_info.value.suggested_filename.endswith('.csv')
+  csv_text=Path(download_info.value.path()).read_text(encoding='utf-8-sig')
+  assert 'QA-Kartenmarker' in csv_text and '52.520000' in csv_text and '13.405000' in csv_text, 'CSV muss Marker und Koordinaten exportieren'
+  assert '"Notiz; ""geprüft"""' in csv_text, 'CSV muss Semikolons und Anführungszeichen korrekt maskieren'
+  print('PASS: Atlasfilter synchronisiert Karte und Liste; CSV-Export liefert eine Datei')
   # Click-to-coordinate: coordinate fields update without submitting the form.
   page.locator('#geographicMap').scroll_into_view_if_needed();mapbox=page.locator('#geographicMap').bounding_box();page.mouse.click(mapbox['x']+mapbox['width']*.6,mapbox['y']+mapbox['height']*.4)
   assert page.locator('#mapLocLat').input_value()!='52.52' or page.locator('#mapLocLon').input_value()!='13.405'
@@ -117,11 +154,14 @@ with sync_playwright() as p:
   sample={'type':'FeatureCollection','features':[{'type':'Feature','properties':{'name':'Berlin'},'geometry':{'type':'Polygon','coordinates':[[[13,52],[14,52],[14,53],[13,53],[13,52]]]}}]}
   page.locator('#stateGeoJsonFile').set_input_files({'name':'states.geojson','mimeType':'application/geo+json','buffer':__import__('json').dumps(sample).encode()});page.locator('#importStateGeoJson').click();page.wait_for_function("document.querySelectorAll('#geographicStateLayer .geo-state').length===1",timeout=3000)
   assert '1 GRENZPOLYGONE' in page.locator('#mapStamp').inner_text()
+  invalid={'type':'FeatureCollection','features':[{'type':'Feature','properties':{'name':'bad'},'geometry':{'type':'Point','coordinates':[13,52]}}]}
+  page.locator('#stateGeoJsonFile').set_input_files({'name':'invalid.geojson','mimeType':'application/geo+json','buffer':__import__('json').dumps(invalid).encode()});page.locator('#importStateGeoJson').click();page.wait_for_function("document.querySelector('#toast').innerText.includes('Polygon')")
+  assert len(page.evaluate('__state.stateGeo.features'))==1, 'Ungültige GeoJSON-Geometrie darf gespeicherte Geodaten nicht überschreiben'
   page.locator('[data-map-mode="world"]').click();assert page.locator('#geographicLand .geo-country').count()>=2
   print('PASS: GeoJSON-Weltkarte, Deutschlandansicht und lokaler Bundesland-Geodatenimport')
   print('PASS: Kartenmarker anlegen, Status/Fortschritt bearbeiten, suchen, auflisten und löschen')
-  page.locator('#taskInput').fill('QA-Aufgabe');page.locator('#taskForm button').click();page.get_by_text('QA-Aufgabe').wait_for();assert page.locator('#taskList .task-row').count()==1
-  page.locator('#taskList [data-task]').check();page.wait_for_function("document.querySelector('#taskList .task-row')?.classList.contains('done')",timeout=3000);assert 'done' in page.locator('#taskList .task-row').get_attribute('class')
+  page.locator('#taskInput').fill('QA-Aufgabe');page.locator('#taskForm button').click();qa_task_row=page.locator('#taskList .task-row').filter(has_text='QA-Aufgabe');qa_task_row.wait_for();assert qa_task_row.count()==1, 'neu angelegte QA-Aufgabe muss genau eine eigene Zeile besitzen'
+  qa_task_row.locator('[data-task]').check();page.wait_for_function("[...document.querySelectorAll('#taskList .task-row')].some(row=>row.innerText.includes('QA-Aufgabe')&&row.classList.contains('done'))",timeout=3000);assert 'done' in qa_task_row.get_attribute('class')
   print('PASS: Aufgabe anlegen und erledigen')
   for module in ['projects','archive','simulation','database']:
    page.locator(f'#nav button[data-module="{module}"]').click()
@@ -148,11 +188,12 @@ with sync_playwright() as p:
   page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='en'",timeout=3000);page.locator('#langBtn').click();page.wait_for_function("document.documentElement.lang==='de'",timeout=3000)
   page.locator('#settingsBtn').click();assert 'open' in page.locator('#settingsModal').get_attribute('class')
   import json as _json
+  tasks_before_preview=page.evaluate('__state.tasks.map(t=>t.title)')
   valid_payload={'schema_version':2,'tasks':[{'id':1,'title':'Vorschauaufgabe'}],'records':[],'map_locations':[],'units':[],'resources':[],'project_assignments':[],'settings':{},'geodata':{},'news':{'items':[],'sources':[]}}
   page.locator('#importFile').set_input_files({'name':'preview-valid.json','mimeType':'application/json','buffer':_json.dumps(valid_payload).encode()})
   page.wait_for_function("document.querySelector('#importPreview').hidden===false && document.querySelector('#importPreviewStatus').classList.contains('valid')",timeout=3000)
   assert page.locator('#importPreviewSummary').inner_text().find('Vorschauaufgabe')==-1
-  assert page.locator('#confirmImport').is_enabled();assert '1' in page.locator('#importPreviewSummary').inner_text();assert page.evaluate('__state.tasks.length===1')
+  assert page.locator('#confirmImport').is_enabled();assert '1' in page.locator('#importPreviewSummary').inner_text();assert page.evaluate('__state.tasks.map(t=>t.title)')==tasks_before_preview, 'Importvorschau darf vorhandene Aufgaben nicht verändern'
   invalid_payload={'schema_version':99,'tasks':[],'records':[]}
   page.locator('#importFile').set_input_files({'name':'preview-invalid.json','mimeType':'application/json','buffer':_json.dumps(invalid_payload).encode()})
   page.wait_for_function("document.querySelector('#importPreviewStatus').classList.contains('invalid')",timeout=3000)
@@ -163,17 +204,25 @@ with sync_playwright() as p:
   page.locator('#createBackup').click();page.wait_for_function("document.querySelectorAll('#backupList .backup-row').length>0",timeout=3000)
   assert page.locator('#backupList .backup-row').count()==1;page.locator('#closeSettings').click()
   print('PASS: DE/EN, anpassbare Personenbezeichnungen, Einstellungen und Sicherungsdialog')
-  page.set_viewport_size({'width':390,'height':844});assert page.locator('#pageTitle').is_visible();assert page.locator('#nav button').count()==7
+  page.set_viewport_size({'width':390,'height':844});assert page.locator('#pageTitle').is_visible();assert page.locator('#nav button').count()==8
   print('PASS: schmale Mobilansicht bleibt bedienbar')
   SCREENSHOT.parent.mkdir(parents=True,exist_ok=True)
   clean=browser.new_page(viewport={'width':1440,'height':1000});clean.set_content(html,wait_until='domcontentloaded',timeout=10000);clean.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
   design=clean.evaluate("({bg:getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),red:getComputedStyle(document.documentElement).getPropertyValue('--red').trim(),focus:!!document.querySelector(':focus-visible'),reducedMotion:!![...document.styleSheets].length,nav:document.querySelectorAll('#nav button').length})")
-  assert design['bg']=='#0b0d0f' and design['red']=='#d34a4e',design
+  assert design['bg']=='#08090c' and design['red']=='#e1263e',design
+  assert clean.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()")=='#d8b56c'
+  assert clean.evaluate("getComputedStyle(document.querySelector('.topbar')).position")=='sticky'
+  assert clean.evaluate("getComputedStyle(document.querySelector('.nav button.active'),'::after').getPropertyValue('background-color')") in ('rgb(216, 181, 108)','rgba(216, 181, 108, 1)')
+  assert clean.evaluate("getComputedStyle(document.querySelector('.panel')).getPropertyValue('box-shadow')")!='none'
+  assert clean.evaluate("getComputedStyle(document.querySelector('.btn')).getPropertyValue('background-image')")!='none'
+  css_text=clean.evaluate("Array.from(document.styleSheets).map(s=>{try{return Array.from(s.cssRules).map(r=>r.cssText).join('\\n')}catch(e){return ''}}).join('\\n')")
+  assert '--red' in css_text and '--gold' in css_text and 'linear-gradient' in css_text, 'CSS muss die Kommandozentrale-Design-Tokens und Verläufe enthalten'
+  assert '@media (max-width: 720px)' in css_text or '@media(max-width:720px)' in css_text
   assert clean.locator('.page-head:after').count()==0 or True
-  assert clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-color')") in ('rgb(211, 74, 78)','rgba(211, 74, 78, 1)')
+  assert 'linear-gradient' in clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-image')")
   assert clean.evaluate("getComputedStyle(document.querySelector('.panel-head'),'::before').getPropertyValue('width')")=='2px'
   assert '--grid-line' in clean.locator('html').get_attribute('style') if clean.locator('html').get_attribute('style') else True
-  assert design['nav']==7,design
+  assert design['nav']==8,design
   clean.screenshot(path=str(SCREENSHOT),full_page=True);clean.screenshot(path=str(DESKTOP_SHOT),full_page=True)
   print('PASS: visuelle Design-Tokens, charakteristische Abschnittsmarkierung, Panel-Raster und sieben Module geprüft')
   clean.set_viewport_size({'width':390,'height':844});clean.wait_for_timeout(120)

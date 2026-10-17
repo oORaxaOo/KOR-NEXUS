@@ -435,6 +435,7 @@ def validate_portable_import(payload):
         if not key or key in news_ids: raise ValueError('News-Cache enthält doppelte oder leere IDs.')
         news_ids.add(key)
         if len(str(item['title']))>1000 or len(str(item['url']))>10000: raise ValueError('News-Eintrag überschreitet Feldgrenzen.')
+        if not _safe_http_url(str(item['url'])): raise ValueError('News-Eintrag enthält keine gültige HTTP(S)-Adresse.')
     source_ids=set()
     for item in news.get('sources',[]):
         if not isinstance(item,dict) or any(k not in item or item[k] is None for k in ('source_key','source_name')): raise ValueError('News-Quellenstatus ist unvollständig.')
@@ -632,49 +633,6 @@ def project_dashboard(con, region_filter='', project_filter='', status_filter=''
     return {'items':result,'total':len(result),'filters':{'region':region_filter or None,'project_id':int(project_filter) if project_filter.isdigit() else None,'status':status_filter or None},'regions':sorted({region for project in projects for region in ([project.get('region')]+[loc.get('region') for loc in locations if loc.get('project_id')==project['id']]) if isinstance(region,str) and region.strip()}),'statuses':['geplant','aktiv','blockiert','abgeschlossen','unbekannt','gemischt'],'semantics':{'progress':'Durchschnitt ausschließlich vorhandener Kartenstandort-Fortschritte; null bedeutet keine Werte.','status':'Aus verknüpften Kartenstandorten abgeleitet; unbekannt bedeutet keine Statusdaten.','resource_quantities':'Je Ressource mit Originaleinheit ausgewiesen; keine Summierung inkompatibler Einheiten.','relationships':'Alle Verknüpfungen über numerische IDs.'}}
 
 
-def project_dashboard(con, region_filter='', project_filter='', status_filter=''):
-    """Build a read-only dashboard with ID-based joins and explicit unknowns."""
-    projects=[dict(r) for r in con.execute("SELECT * FROM records WHERE module='projects' ORDER BY updated_at DESC,id DESC")]
-    tasks={r['id']:dict(r) for r in con.execute('SELECT * FROM tasks')}
-    units={r['id']:dict(r) for r in con.execute('SELECT * FROM units')}
-    resources={r['id']:dict(r) for r in con.execute('SELECT * FROM resources')}
-    locations=[dict(r) for r in con.execute('SELECT * FROM map_locations ORDER BY id')]
-    assignments=[dict(r) for r in con.execute('SELECT * FROM project_assignments ORDER BY id')]
-    result=[]
-    for project in projects:
-        pid=project['id']
-        plocs=[loc for loc in locations if loc.get('project_id')==pid]
-        passign=[a for a in assignments if a['project_id']==pid]
-        regions=[]
-        for value in [project.get('region')]+[loc.get('region') for loc in plocs]:
-            value=(value or '').strip()
-            if value and value not in regions: regions.append(value)
-        statuses=list(dict.fromkeys(loc['status'] for loc in plocs if loc.get('status')))
-        status='unbekannt' if not statuses else statuses[0] if len(statuses)==1 else 'gemischt'
-        progress_values=[loc['progress'] for loc in plocs if isinstance(loc.get('progress'),(int,float))]
-        linked_tasks=[]
-        seen_tasks=set()
-        for loc in plocs:
-            tid=loc.get('task_id')
-            task=tasks.get(tid) if tid is not None else None
-            if task and tid not in seen_tasks:
-                seen_tasks.add(tid)
-                if not task.get('done'): linked_tasks.append({'id':tid,'title':task['title'],'area':task['area'],'done':False,'location_id':loc['id'],'location_title':loc['title']})
-        members=[]; assigned_resources=[]
-        for a in passign:
-            if a.get('unit_id') is not None and a['unit_id'] in units:
-                u=units[a['unit_id']]
-                members.append({'assignment_id':a['id'],'id':u['id'],'name':u['name'],'role':u.get('role',''),'status':u.get('status',''),'region':u.get('region',''),'quantity':a.get('quantity'),'notes':a.get('notes','')})
-            if a.get('resource_id') is not None and a['resource_id'] in resources:
-                r=resources[a['resource_id']]
-                assigned_resources.append({'assignment_id':a['id'],'id':r['id'],'name':r['name'],'category':r.get('category',''),'quantity':a.get('quantity'),'unit':r.get('unit') or None,'available_quantity':r.get('quantity'),'location':r.get('location',''),'notes':a.get('notes','')})
-        project_locations=[{'id':l['id'],'title':l['title'],'region':l.get('region') or None,'latitude':l['latitude'],'longitude':l['longitude'],'status':l.get('status') or None,'progress':l.get('progress'),'task_id':l.get('task_id'),'unit_id':l.get('unit_id'),'resource_id':l.get('resource_id')} for l in plocs]
-        if region_filter and region_filter not in regions: continue
-        if project_filter and str(pid)!=str(project_filter): continue
-        if status_filter and not (status_filter=='unbekannt' and not statuses) and status_filter not in statuses: continue
-        result.append({'id':pid,'title':project['title'],'description':project.get('body') or '', 'region':project.get('region') or None,'regions':regions,'updated_at':project.get('updated_at'),'status':status,'statuses':statuses,'progress':round(sum(progress_values)/len(progress_values)) if progress_values else None,'locations':project_locations,'open_tasks':linked_tasks,'members':members,'resources':assigned_resources,'counts':{'locations':len(plocs),'open_tasks':len(linked_tasks),'members':len(members),'resources':len(assigned_resources)}})
-    return {'items':result,'total':len(result),'filters':{'region':region_filter or None,'project_id':int(project_filter) if project_filter.isdigit() else None,'status':status_filter or None},'regions':sorted({region for project in projects for region in ([project.get('region')]+[loc.get('region') for loc in locations if loc.get('project_id')==project['id']]) if isinstance(region,str) and region.strip()}),'statuses':['geplant','aktiv','blockiert','abgeschlossen','unbekannt','gemischt'],'semantics':{'progress':'Durchschnitt ausschließlich vorhandener Kartenstandort-Fortschritte; null bedeutet keine Werte.','status':'Aus verknüpften Kartenstandorten abgeleitet; unbekannt bedeutet keine Statusdaten.','resource_quantities':'Je Ressource mit Originaleinheit ausgewiesen; keine Summierung inkompatibler Einheiten.','relationships':'Alle Verknüpfungen über numerische IDs.'}}
-
 
 class AppHandler(BaseHTTPRequestHandler):
     server_version='KORLocalCore/1.0'
@@ -725,11 +683,6 @@ class AppHandler(BaseHTTPRequestHandler):
                 with db_connect() as con:return self.send_json({'items':[dict(r) for r in con.execute('SELECT * FROM resources ORDER BY id DESC')]})
             if path=='/api/assignments':
                 with db_connect() as con:return self.send_json({'items':[dict(r) for r in con.execute('SELECT a.*,p.title project_title,u.name unit_name,r.name resource_name FROM project_assignments a JOIN records p ON p.id=a.project_id LEFT JOIN units u ON u.id=a.unit_id LEFT JOIN resources r ON r.id=a.resource_id ORDER BY a.id DESC')]})
-            if path=='/api/dashboard/projects':
-                region=(q.get('region',[''])[0] or '').strip()[:180]; project=(q.get('project_id',[''])[0] or '').strip(); status=(q.get('status',[''])[0] or '').strip()
-                if project and (not project.isdigit() or int(project)<1): return self.fail(400,'Ungültige Projekt-ID.')
-                if status and status not in ('geplant','aktiv','blockiert','abgeschlossen','unbekannt','gemischt'): return self.fail(400,'Unbekannter Projektstatus.')
-                with db_connect() as con:return self.send_json(project_dashboard(con,region,project,status))
             if path=='/api/dashboard/projects':
                 region=(q.get('region',[''])[0] or '').strip()[:180]; project=(q.get('project_id',[''])[0] or '').strip(); status=(q.get('status',[''])[0] or '').strip()
                 if project and (not project.isdigit() or int(project)<1): return self.fail(400,'Ungültige Projekt-ID.')
@@ -847,13 +800,13 @@ class AppHandler(BaseHTTPRequestHandler):
                     name=str(data.get('name','')).strip()
                     try: qty=float(data.get('quantity',0))
                     except (TypeError,ValueError):return self.fail(400,'Menge muss eine Zahl sein.')
-                    if not name or len(name)>180 or qty<0 or qty>1e12:return self.fail(400,'Ungültige Ressourcenfelder.')
+                    if not name or len(name)>180 or not math.isfinite(qty) or qty<0 or qty>1e12:return self.fail(400,'Ungültige Ressourcenfelder.')
                     with db_connect() as con:cur=con.execute('INSERT INTO resources(name,category,quantity,unit,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(name,str(data.get('category','Allgemein'))[:80],qty,str(data.get('unit','Stück'))[:40],str(data.get('location',''))[:180],str(data.get('notes',''))[:10000],now,now)); row=con.execute('SELECT * FROM resources WHERE id=?',(cur.lastrowid,)).fetchone()
                     return self.send_json({'item':dict(row)},201)
                 if path=='/api/assignments':
                     try: pid=int(data['project_id']); qty=float(data.get('quantity',0)); uid=int(data['unit_id']) if data.get('unit_id') is not None else None; rid=int(data['resource_id']) if data.get('resource_id') is not None else None
                     except (TypeError,ValueError,KeyError):return self.fail(400,'Ungültige Zuweisungsdaten.')
-                    if (uid is None)==(rid is None) or qty<0:return self.fail(400,'Genau eine Einheit oder Ressource sowie eine nichtnegative Menge angeben.')
+                    if (uid is None)==(rid is None) or not math.isfinite(qty) or qty<0 or qty>1e12:return self.fail(400,'Genau eine Einheit oder Ressource sowie eine endliche, nichtnegative Menge bis 1e12 angeben.')
                     with db_connect() as con:
                         if not con.execute("SELECT 1 FROM records WHERE id=? AND module='projects'",(pid,)).fetchone():return self.fail(400,'Projekt nicht gefunden.')
                         if uid is not None and not con.execute('SELECT 1 FROM units WHERE id=?',(uid,)).fetchone():return self.fail(400,'Einheit nicht gefunden.')
