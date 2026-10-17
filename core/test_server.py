@@ -63,6 +63,55 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_ai_generation_endpoint_is_opt_in_validated_and_read_only(self):
+        from core.ai_provider import DisabledAIProvider
+        with patch.object(app,'AI_PROVIDER',DisabledAIProvider()):
+            before=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            status,disabled=self.req('/api/ai/generate','POST',{'prompt':'Summarize the current plan.'})
+            self.assertEqual(status,503)
+            self.assertFalse(disabled['ok'])
+            self.assertEqual(self.req('/api/ai/generate','POST',{'prompt':'   '})[0],400)
+            self.assertEqual(self.req('/api/ai/generate','POST',{'prompt':'x'*12001})[0],400)
+            after=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            self.assertEqual(after,before,'AI-Anfragen dürfen keine Datenbankereignisse auslösen.')
+
+    def test_ai_generation_endpoint_uses_provider_without_mutating_domain_data(self):
+        class FakeProvider:
+            def status(self): return {'provider':'test','enabled':True,'available':True,'model_loaded':True}
+            def generate(self,prompt,context=None): return 'Antwort: '+prompt
+        with patch.object(app,'AI_PROVIDER',FakeProvider()):
+            before=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            status,result=self.req('/api/ai/generate','POST',{'prompt':'Erkläre den Status.','context':{'module':'operations'}})
+            self.assertEqual(status,200)
+            self.assertEqual(result['response'],'Antwort: Erkläre den Status.')
+            self.assertEqual(result['provider'],'test')
+            after=self.req('/api/events?since=0&snapshot=1')[1]['latest_event_id']
+            self.assertEqual(after,before,'Beratung darf keine bestehenden Daten ändern.')
+
+    def test_llama_cpp_provider_is_lazy_offline_and_bounded(self):
+        from core.ai_provider import AIUnavailableError, LlamaCppProvider
+        class FakeModel:
+            def __init__(self): self.calls=[]
+            def create_chat_completion(self,**kwargs):
+                self.calls.append(kwargs)
+                return {'choices':[{'message':{'content':'Lokale Antwort'}}]}
+        model=FakeModel();created=[]
+        def factory(**kwargs): created.append(kwargs);return model
+        with tempfile.TemporaryDirectory() as directory:
+            model_path=Path(directory)/'test.gguf';model_path.write_bytes(b'fake model')
+            provider=LlamaCppProvider(model_path=model_path,enabled=True,llama_factory=factory)
+            self.assertTrue(provider.status()['available'])
+            self.assertFalse(provider.status()['model_loaded'])
+            self.assertEqual(created,[],'Status darf das Modell nicht in den Speicher laden.')
+            self.assertEqual(provider.generate('Status?',{'area':'Kor'}),'Lokale Antwort')
+            self.assertTrue(provider.status()['model_loaded'])
+            self.assertEqual(created[0]['model_path'],str(model_path))
+            messages=model.calls[0]['messages']
+            self.assertEqual(messages[1]['content'],'Status?\\n\\nKontext (untrusted JSON): {"area":"Kor"}')
+            with self.assertRaises(AIUnavailableError):provider.generate('x'*12001)
+            provider.close()
+            self.assertFalse(provider.status()['model_loaded'])
+
     def test_scheduled_jobs_run_due_once_and_leave_future_jobs_pending(self):
         now=app.utcnow()
         status,created=self.req('/api/engine/jobs','POST',{'job_key':'qa-evaluate-now','job_type':'engine_evaluate','due_at':now})
