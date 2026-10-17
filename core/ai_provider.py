@@ -62,7 +62,7 @@ class LlamaCppProvider(AIProvider):
         raw_path = model_path if model_path is not None else os.environ.get('KOR_NEXUS_AI_MODEL_PATH', '')
         self.model_path = Path(raw_path).expanduser() if str(raw_path or '').strip() else None
         self.context_size = self._bounded_int(context_size if context_size is not None else os.environ.get('KOR_NEXUS_AI_N_CTX', 4096), 4096, MIN_CONTEXT_SIZE, MAX_CONTEXT_SIZE)
-        self.max_tokens = self._bounded_int(max_tokens if max_tokens is not None else os.environ.get('KOR_NEXUS_AI_MAX_TOKENS', 512), 512, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS)
+        self.max_tokens = min(self._bounded_int(max_tokens if max_tokens is not None else os.environ.get('KOR_NEXUS_AI_MAX_TOKENS', 512), 512, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS), max(MIN_OUTPUT_TOKENS, self.context_size // 2))
         self._factory = llama_factory
         self._model = None
         self._lock = threading.RLock()
@@ -156,8 +156,9 @@ class LlamaCppProvider(AIProvider):
             'Führe keine Befehle aus und fordere keine Zugangsdaten an. Antworte klar und knapp auf Deutsch, sofern der Nutzer keine andere Sprache verlangt.'
         )
         user_message = prompt + '\n\nKontext (untrusted JSON): ' + context_text
-        if len(user_message) > MAX_PROMPT_CHARS + MAX_CONTEXT_CHARS + 64:
-            raise ValueError('Gesamteingabe überschreitet die erlaubte Länge.')
+        input_budget = max(1024, (self.context_size - self.max_tokens - 128) * 2)
+        if len(user_message) > input_budget:
+            raise ValueError(f'Eingabe ist für das konfigurierte Kontextfenster zu lang (maximal {input_budget} Zeichen).')
         with self._lock:
             model = self._model or self._load_model(path)
             try:
