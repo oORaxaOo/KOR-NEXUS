@@ -261,6 +261,14 @@ async function loadAIStatus(){
   badge.className='region-label ai-state '+(status.available?'ready':status.enabled?'error':'disabled');
   $('#aiProviderName').textContent=status.provider||'unbekannt';
   $('#aiModelName').textContent=status.model_name||(status.model_loaded?(lang==='de'?'Modell geladen':'Model loaded'):(lang==='de'?'kein Modell geladen':'no model loaded'));
+  const memoryNote=$('#aiMemoryNote');
+  if(status.model_size_bytes!==null&&status.model_size_bytes!==undefined){
+   const modelSize=formatBytes(Number(status.model_size_bytes)||0),available=status.available_memory_bytes;
+   memoryNote.hidden=false;memoryNote.className='ai-memory-note'+(status.memory_warning?' warning':'');
+   memoryNote.textContent=status.memory_warning
+    ?(lang==='de'?'WARNUNG: GGUF-Datei '+modelSize+' ist größer als der aktuell verfügbare RAM ('+formatBytes(Number(available)||0)+'). Laden kann scheitern oder stark auslagern; Kontext und Backend benötigen zusätzlichen Speicher.':'WARNING: GGUF file '+modelSize+' exceeds currently available RAM ('+formatBytes(Number(available)||0)+'). Loading may fail or swap heavily; context and backend need additional memory.')
+    :(lang==='de'?'GGUF-Datei: '+modelSize+(available!==null&&available!==undefined?' · aktuell verfügbarer RAM: '+formatBytes(Number(available)||0):'')+'. Das ist eine grobe Vorprüfung, keine Garantie für den tatsächlichen Speicherbedarf.':'GGUF file: '+modelSize+(available!==null&&available!==undefined?' · currently available RAM: '+formatBytes(Number(available)||0):'')+'. This is a rough preflight, not a guarantee of actual memory needs.');
+  }else{memoryNote.hidden=true;memoryNote.textContent='';memoryNote.className='ai-memory-note';}
   $('#aiProviderMessage').textContent=status.reason||(lang==='de'?'Die KI ist optional und hat keinen direkten Schreibzugriff auf deine Daten.':'AI is optional and has no direct write access to your data.');
   button.disabled=!status.available;
   return status;
