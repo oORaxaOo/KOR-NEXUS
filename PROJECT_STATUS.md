@@ -1,6 +1,21 @@
 # Projektstatus — KOR-NEXUS
 
-Stand: 2026-10-16 · Version 1.20.0 · Schwerpunkt: Repository-Wiederherstellung, Ordnung und Release-Verifikation
+Stand: 2026-10-17 · Version 1.20.0 · Schwerpunkt: Core Engine, Live-Updates und sichere lokale Automatisierung
+
+## Aktueller Arbeitsstand — `transfer/kor-nexus-1.20.0`
+
+- [x] Additives SQLite-Ereignisjournal mit Änderungs-Triggern, REST-Replay, SSE-Stream, Polling-Rückfall und Reset bei Replay-Lücken.
+- [x] Begrenzte Journal-Aufbewahrung mit konfigurierbarem Umfang von 1.000 bis 1.000.000 Ereignissen; Änderung über Systemeinstellungen, sofortige Bereinigung und getesteter Reset für ältere Cursor.
+- [x] Ressourcen-Bewegungsledger mit idempotenten Buchungen, Ausgangsbeständen für Altdaten, Bestandsrichtlinien und deterministischen Warnungen.
+- [x] Aufgaben-Fälligkeiten, Prioritäten und Abhängigkeiten mit Zyklusprüfung; geplante Jobs und sichere, allowlist-basierte Automationen.
+- [x] Kritische Ressourcenänderungen werden als Aktionsvorschläge gespeichert und benötigen eine bestätigte Freigabe; Routinen sind idempotent.
+- [x] Core-Engine-/Automationsarbeitsbereich in der UI; provider-neutraler KI-Vertrag mit standardmäßig deaktiviertem Provider.
+- [x] JSON-Schema 2, Backup/Restore und ältere Datenbankstände bleiben durch additive Migrationen und Kompatibilitätstests unterstützt.
+- [x] Letzter grüner Release-Gate: 47 API-Tests, Browser-Smoke-Test sowie nativer Arch-Paketbau und isolierter Installationstest erfolgreich ([Workflow](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39032128627)).
+- [ ] Native llama.cpp-Laufzeit und Modellverwaltung — bewusst zurückgestellt, bis der Kern abschließend stabilisiert ist.
+- [ ] Eine echte Ende-zu-Ende-Prüfung mit mehreren gleichzeitigen SSE-Clients und Rückwechsel von Polling auf SSE steht noch aus.
+- [x] Alle Änderungen bleiben auf dem Arbeitsbranch; `main` wurde nicht direkt verändert.
+
 
 ## Release 1.20.0 — Repository-Transfer und Qualitätsprüfung
 
