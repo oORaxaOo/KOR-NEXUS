@@ -301,6 +301,40 @@ class CoreApiTests(unittest.TestCase):
         self.assertTrue(ahead['reset_required'])
         self.assertEqual(ahead['cursor'],ahead['latest_event_id'])
 
+    def test_sse_replays_committed_events_to_multiple_clients_and_streams_new_events(self):
+        status,created=self.req('/api/tasks','POST',{'title':'SSE-Replay-Baseline'})
+        self.assertEqual(status,201)
+        def stream_request(cursor):
+            return Request(self.base+'/api/events/stream?since='+str(cursor),headers={'Accept':'text/event-stream','Last-Event-ID':str(cursor)})
+        def read_sse_event(response):
+            lines=[]
+            while True:
+                line=response.readline()
+                self.assertTrue(line,'SSE stream closed before delivering the expected event.')
+                if line in (b'\n',b'\r\n'):break
+                if line.startswith(b':'):continue
+                lines.append(line.decode('utf-8').rstrip('\r\n'))
+            return lines
+        with urlopen(stream_request(0),timeout=5) as first, urlopen(stream_request(0),timeout=5) as second:
+            self.assertEqual(first.headers.get_content_type(),'text/event-stream')
+            self.assertEqual(second.headers.get_content_type(),'text/event-stream')
+            replay_one=read_sse_event(first);replay_two=read_sse_event(second)
+            self.assertEqual(replay_one[0],replay_two[0])
+            self.assertEqual(replay_one[1],'event: change')
+            baseline=json.loads(next(line[6:] for line in replay_one if line.startswith('data: ')))
+            self.assertEqual(baseline['entity_type'],'task')
+            self.assertEqual(baseline['payload'],{'id':created['item']['id']})
+            cursor=int(replay_one[0].split(':',1)[1].strip())
+        with urlopen(stream_request(cursor),timeout=5) as first, urlopen(stream_request(cursor),timeout=5) as second:
+            status,live=self.req('/api/tasks','POST',{'title':'SSE-Live-Update'})
+            self.assertEqual(status,201)
+            live_one=read_sse_event(first);live_two=read_sse_event(second)
+            self.assertEqual(live_one[0],live_two[0])
+            self.assertGreater(int(live_one[0].split(':',1)[1].strip()),cursor)
+            event=json.loads(next(line[6:] for line in live_one if line.startswith('data: ')))
+            self.assertEqual(event['entity_type'],'task')
+            self.assertEqual(event['payload'],{'id':live['item']['id']})
+
     def test_event_journal_retention_is_bounded_and_configurable(self):
         status,settings=self.req('/api/settings')
         self.assertEqual(status,200)
