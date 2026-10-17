@@ -142,6 +142,32 @@ def ensure_engine_schema(con):
         SELECT id,0,NULL,updated_at FROM resources""")
 
 
+
+def ensure_task_engine_schema(con):
+    """Add schedule fields and a cycle-safe dependency graph without rewriting tasks."""
+    existing={row['name'] for row in con.execute('PRAGMA table_info(tasks)')}
+    columns={
+        'due_at':'TEXT',
+        'priority':'INTEGER NOT NULL DEFAULT 3 CHECK(priority BETWEEN 1 AND 5)',
+        'estimated_minutes':'INTEGER CHECK(estimated_minutes IS NULL OR estimated_minutes BETWEEN 0 AND 10000000)',
+        'actual_minutes':'INTEGER CHECK(actual_minutes IS NULL OR actual_minutes BETWEEN 0 AND 10000000)',
+        'recurrence_json':"TEXT NOT NULL DEFAULT '{}'",
+        'blocked_reason':"TEXT NOT NULL DEFAULT ''"
+    }
+    for name,definition in columns.items():
+        if name not in existing: con.execute(f'ALTER TABLE tasks ADD COLUMN {name} {definition}')
+    con.execute("""CREATE TABLE IF NOT EXISTS task_dependencies(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        depends_on_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        dependency_type TEXT NOT NULL DEFAULT 'finish_to_start' CHECK(dependency_type='finish_to_start'),
+        created_at TEXT NOT NULL,
+        UNIQUE(task_id,depends_on_task_id),
+        CHECK(task_id<>depends_on_task_id)
+    )""")
+    con.execute('CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id,depends_on_task_id)')
+
+
 def ensure_event_journal_schema(con):
     """Install the additive change journal and triggers without rewriting user data."""
     con.execute("""CREATE TABLE IF NOT EXISTS event_journal(
@@ -156,7 +182,7 @@ def ensure_event_journal_schema(con):
     )""")
     con.execute('CREATE INDEX IF NOT EXISTS idx_event_journal_entity ON event_journal(entity_type,entity_id,event_id)')
     entities = [
-        ('tasks','task'),('records','record'),('units','unit'),
+        ('tasks','task'),('task_dependencies','task_dependency'),('records','record'),('units','unit'),
         ('resources','resource'),('resource_movements','resource_movement'),('resource_policies','resource_policy'),('alerts','alert'),('engine_runs','engine_run'),('project_assignments','assignment'),
         ('map_locations','location')
     ]
@@ -174,6 +200,7 @@ def ensure_event_journal_schema(con):
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(7,?)',(utcnow(),))
     con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)',(utcnow(),))
+    con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(9,?)',(utcnow(),))
 
 
 def read_event_batch(con, since, limit=100):
@@ -237,6 +264,7 @@ def initialize():
             con.execute('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)',(k,v,utcnow()))
         ensure_resource_ledger_schema(con)
         ensure_engine_schema(con)
+        ensure_task_engine_schema(con)
         ensure_event_journal_schema(con)
         con.commit()
     try: os.chmod(DB_PATH, 0o600)
@@ -310,7 +338,52 @@ def maybe_backup():
 def unit_dict(r):
     d=dict(r); d['tags']=json.loads(d.get('tags') or '[]'); return d
 
-def task_dict(r): return {'id':r['id'],'title':r['title'],'area':r['area'],'done':bool(r['done']),'created_at':r['created_at'],'updated_at':r['updated_at']}
+def normalize_task_schedule(data, old=None):
+    def value(key, default=None): return data[key] if key in data else (old[key] if old is not None else default)
+    due=value('due_at')
+    if due in ('',None): due=None
+    else:
+        due=str(due).strip()
+        try: dt.date.fromisoformat(due)
+        except ValueError: raise ValueError('Fälligkeitsdatum muss im Format JJJJ-MM-TT vorliegen.')
+    try: priority=int(value('priority',3))
+    except (TypeError,ValueError): raise ValueError('Priorität muss eine ganze Zahl von 1 bis 5 sein.')
+    if priority<1 or priority>5: raise ValueError('Priorität muss zwischen 1 und 5 liegen.')
+    def optional_minutes(key):
+        raw=value(key)
+        if raw in ('',None): return None
+        try: minutes=int(raw)
+        except (TypeError,ValueError): raise ValueError(f'{key} muss eine ganze Zahl sein.')
+        if minutes<0 or minutes>10000000: raise ValueError(f'{key} muss zwischen 0 und 10.000.000 liegen.')
+        return minutes
+    estimated=optional_minutes('estimated_minutes')
+    actual=optional_minutes('actual_minutes')
+    if 'recurrence' in data:
+        recurrence=data['recurrence']
+    elif old is not None:
+        try: recurrence=json.loads(old['recurrence_json'] or '{}')
+        except (ValueError,TypeError): recurrence={}
+    else: recurrence={}
+    if not isinstance(recurrence,dict): raise ValueError('Wiederholung muss ein JSON-Objekt sein.')
+    allowed={'frequency','interval','until','days_of_week'}
+    if any(key not in allowed for key in recurrence): raise ValueError('Unbekanntes Feld in der Wiederholung.')
+    if recurrence:
+        if recurrence.get('frequency') not in ('daily','weekly','monthly'): raise ValueError('Wiederholung muss daily, weekly oder monthly verwenden.')
+        try: interval=int(recurrence.get('interval',1))
+        except (TypeError,ValueError): raise ValueError('Wiederholungsintervall muss eine ganze Zahl sein.')
+        if not 1<=interval<=365: raise ValueError('Wiederholungsintervall muss zwischen 1 und 365 liegen.')
+        recurrence['interval']=interval
+        if recurrence.get('until') not in (None,''):
+            try: dt.date.fromisoformat(str(recurrence['until']))
+            except ValueError: raise ValueError('Wiederholungsende muss im Format JJJJ-MM-TT vorliegen.')
+        days=recurrence.get('days_of_week',[])
+        if not isinstance(days,list) or any(not isinstance(day,int) or isinstance(day,bool) or day<0 or day>6 for day in days): raise ValueError('Wochentage müssen Zahlen von 0 bis 6 sein.')
+    blocked=str(value('blocked_reason','') or '').strip()
+    if len(blocked)>1000: raise ValueError('Blockierungsgrund darf höchstens 1.000 Zeichen enthalten.')
+    return due,priority,estimated,actual,json.dumps(recurrence,ensure_ascii=False,separators=(',',':')),blocked
+
+
+def task_dict(r): return {'id':r['id'],'title':r['title'],'area':r['area'],'done':bool(r['done']),'due_at':r['due_at'],'priority':r['priority'],'estimated_minutes':r['estimated_minutes'],'actual_minutes':r['actual_minutes'],'recurrence':json.loads(r['recurrence_json'] or '{}'),'blocked_reason':r['blocked_reason'],'created_at':r['created_at'],'updated_at':r['updated_at']}
 def record_dict(r): return {'id':r['id'],'module':r['module'],'title':r['title'],'body':r['body'],'region':r['region'],'tags':json.loads(r['tags'] or '[]'),'created_at':r['created_at'],'updated_at':r['updated_at']}
 
 
@@ -513,6 +586,11 @@ def validate_portable_import(payload):
         if not isinstance(r.get('tags',[]),list): raise ValueError('Datensatz-Tags müssen Listen sein.')
     for t in data['tasks']:
         if not str(t.get('title','')).strip() or len(str(t.get('title','')))>180: raise ValueError('Mindestens eine Aufgabe ist ungültig.')
+        recurrence={}
+        raw_recurrence=t.get('recurrence_json','{}')
+        try: recurrence=json.loads(raw_recurrence) if isinstance(raw_recurrence,str) else raw_recurrence
+        except (ValueError,TypeError): raise ValueError('Aufgabenwiederholung ist ungültig.')
+        normalize_task_schedule({'due_at':t.get('due_at'),'priority':t.get('priority',3),'estimated_minutes':t.get('estimated_minutes'),'actual_minutes':t.get('actual_minutes'),'recurrence':recurrence,'blocked_reason':t.get('blocked_reason','')})
     for u in data.get('units',[]):
         if not str(u.get('name','')).strip() or len(str(u.get('name','')))>180 or not isinstance(u.get('tags',[]),list): raise ValueError('Mindestens ein Personenprofil ist ungültig.')
     for r in data.get('resources',[]):
@@ -688,7 +766,13 @@ def apply_portable_import(con, payload, now):
         con.execute('DELETE FROM units'); con.execute('DELETE FROM resources')
     task_map={};record_map={};unit_map={};resource_map={}
     for t in data['tasks']:
-        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at) VALUES(?,?,?,?,?)',(str(t['title']).strip(),str(t.get('area','SYSTEM'))[:80],int(bool(t.get('done'))),str(t.get('created_at',now))[:80],str(t.get('updated_at',now))[:80]))
+        recurrence={}
+        raw_recurrence=t.get('recurrence_json','{}')
+        try: recurrence=json.loads(raw_recurrence) if isinstance(raw_recurrence,str) else raw_recurrence
+        except (ValueError,TypeError): recurrence={}
+        due,priority,estimated,actual,recurrence_json,blocked=normalize_task_schedule({'due_at':t.get('due_at'),'priority':t.get('priority',3),'estimated_minutes':t.get('estimated_minutes'),'actual_minutes':t.get('actual_minutes'),'recurrence':recurrence,'blocked_reason':t.get('blocked_reason','')})
+        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at,due_at,priority,estimated_minutes,actual_minutes,recurrence_json,blocked_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(str(t['title']).strip(),str(t.get('area','SYSTEM'))[:80],int(bool(t.get('done'))),str(t.get('created_at',now))[:80],str(t.get('updated_at',now))[:80],due,priority,estimated,actual,recurrence_json,blocked))
+
         if t.get('id') is not None: task_map[str(t['id'])]=cur.lastrowid
     for r in data['records']:
         cur=con.execute('INSERT INTO records(module,title,body,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(r['module'],str(r['title']).strip(),str(r.get('body',''))[:100000],str(r.get('region',''))[:180],json.dumps(r.get('tags',[]) if isinstance(r.get('tags',[]),list) else [],ensure_ascii=False),str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
@@ -920,6 +1004,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if path=='/api/health': return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'database':'SQLite','data_dir':str(DATA_HOME),'backup_count':len(list(BACKUP_DIR.glob('kor-*.sqlite3'))),'python':sys.version.split()[0]})
             if path=='/api/tasks':
                 with db_connect() as con:return self.send_json({'items':[task_dict(r) for r in con.execute('SELECT * FROM tasks ORDER BY done ASC,id DESC')]})
+            m=re.fullmatch(r'/api/tasks/(\d+)/dependencies',path)
+            if m:
+                ident=int(m.group(1))
+                with db_connect() as con:
+                    if not con.execute('SELECT 1 FROM tasks WHERE id=?',(ident,)).fetchone():return self.fail(404,'Aufgabe nicht gefunden.')
+                    rows=[dict(r) for r in con.execute('SELECT d.*,t.title AS depends_on_title,t.done AS depends_on_done FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_task_id WHERE d.task_id=? ORDER BY d.id',(ident,))]
+                return self.send_json({'items':rows,'task_id':ident})
             if path=='/api/records':
                 module=q.get('module',[''])[0]
                 if module not in MODULES:return self.fail(400,'Unbekanntes Modul.')
@@ -1059,11 +1150,32 @@ class AppHandler(BaseHTTPRequestHandler):
                         movement=con.execute('SELECT * FROM resource_movements WHERE id=?',(cur.lastrowid,)).fetchone()
                         updated_resource=con.execute('SELECT * FROM resources WHERE id=?',(ident,)).fetchone()
                     return self.send_json({'item':dict(movement),'resource':dict(updated_resource),'idempotent_replay':False},201)
+                m=re.fullmatch(r'/api/tasks/(\d+)/dependencies',path)
+                if m:
+                    task_id=int(m.group(1))
+                    try: depends_on=int(data.get('depends_on_task_id'))
+                    except (TypeError,ValueError): return self.fail(400,'depends_on_task_id muss eine gültige Aufgaben-ID sein.')
+                    if data.get('dependency_type','finish_to_start')!='finish_to_start':return self.fail(400,'Nur finish_to_start-Abhängigkeiten werden unterstützt.')
+                    if task_id==depends_on:return self.fail(400,'Eine Aufgabe kann nicht von sich selbst abhängen.')
+                    with db_connect() as con:
+                        if not con.execute('SELECT 1 FROM tasks WHERE id=?',(task_id,)).fetchone() or not con.execute('SELECT 1 FROM tasks WHERE id=?',(depends_on,)).fetchone():return self.fail(404,'Aufgabe oder Abhängigkeit nicht gefunden.')
+                        cycle=con.execute("""WITH RECURSIVE reachable(id) AS (
+                            SELECT depends_on_task_id FROM task_dependencies WHERE task_id=?
+                            UNION
+                            SELECT d.depends_on_task_id FROM task_dependencies d JOIN reachable r ON d.task_id=r.id
+                        ) SELECT 1 FROM reachable WHERE id=? LIMIT 1""",(depends_on,task_id)).fetchone()
+                        if cycle:return self.fail(409,'Diese Abhängigkeit würde einen Zyklus erzeugen.')
+                        if con.execute('SELECT 1 FROM task_dependencies WHERE task_id=? AND depends_on_task_id=?',(task_id,depends_on)).fetchone():return self.fail(409,'Diese Aufgabenabhängigkeit existiert bereits.')
+                        cur=con.execute('INSERT INTO task_dependencies(task_id,depends_on_task_id,dependency_type,created_at) VALUES(?,?,?,?)',(task_id,depends_on,'finish_to_start',now))
+                        row=con.execute('SELECT d.*,t.title AS depends_on_title,t.done AS depends_on_done FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_task_id WHERE d.id=?',(cur.lastrowid,)).fetchone()
+                    return self.send_json({'item':dict(row)},201)
                 if path=='/api/tasks':
                     title=str(data.get('title','')).strip();area=str(data.get('area','SYSTEM')).strip()[:80] or 'SYSTEM'
                     if not title or len(title)>180:return self.fail(400,'Titel muss zwischen 1 und 180 Zeichen lang sein.')
+                    try: schedule=normalize_task_schedule(data)
+                    except ValueError as exc:return self.fail(400,str(exc))
                     with db_connect() as con:
-                        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at) VALUES(?,?,0,?,?)',(title,area,now,now));r=con.execute('SELECT * FROM tasks WHERE id=?',(cur.lastrowid,)).fetchone()
+                        cur=con.execute('INSERT INTO tasks(title,area,done,created_at,updated_at,due_at,priority,estimated_minutes,actual_minutes,recurrence_json,blocked_reason) VALUES(?,?,0,?,?,?,?,?,?,?,?)',(title,area,now,now,*schedule));r=con.execute('SELECT * FROM tasks WHERE id=?',(cur.lastrowid,)).fetchone()
                     return self.send_json({'item':task_dict(r)},201)
                 if path=='/api/locations':
                     title=str(data.get('title','')).strip();region=str(data.get('region','')).strip()[:180];kind=str(data.get('kind','Projekt')).strip()[:40] or 'Projekt';notes=str(data.get('notes',''))
@@ -1154,6 +1266,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     with _db_lock, db_connect() as con:
                         ensure_resource_ledger_schema(con)
                         ensure_engine_schema(con)
+                        ensure_task_engine_schema(con)
                         ensure_event_journal_schema(con)
                     return self.send_json({'ok':True,'restored':name,'safety_backup':safety})
                 if path=='/api/import':
@@ -1199,6 +1312,10 @@ class AppHandler(BaseHTTPRequestHandler):
         maybe_backup();now=utcnow()
         with _db_lock:
             try:
+                m=re.fullmatch(r'/api/task-dependencies/(\d+)',path)
+                if m:
+                    with db_connect() as con:con.execute('DELETE FROM task_dependencies WHERE id=?',(int(m.group(1)),))
+                    return self.send_json({'ok':True})
                 m=re.fullmatch(r'/api/tasks/(\d+)',path)
                 if m:
                     ident=int(m.group(1))
@@ -1207,7 +1324,9 @@ class AppHandler(BaseHTTPRequestHandler):
                         if not old:return self.fail(404,'Aufgabe nicht gefunden.')
                         title=str(data.get('title',old['title'])).strip();area=str(data.get('area',old['area'])).strip()[:80];done=int(bool(data.get('done',old['done'])))
                         if not title or len(title)>180:return self.fail(400,'Ungültiger Titel.')
-                        con.execute('UPDATE tasks SET title=?,area=?,done=?,updated_at=? WHERE id=?',(title,area,done,now,ident));r=con.execute('SELECT * FROM tasks WHERE id=?',(ident,)).fetchone()
+                        try: schedule=normalize_task_schedule(data,old)
+                        except ValueError as exc:return self.fail(400,str(exc))
+                        con.execute('UPDATE tasks SET title=?,area=?,done=?,due_at=?,priority=?,estimated_minutes=?,actual_minutes=?,recurrence_json=?,blocked_reason=?,updated_at=? WHERE id=?',(title,area,done,*schedule,now,ident));r=con.execute('SELECT * FROM tasks WHERE id=?',(ident,)).fetchone()
                     return self.send_json({'item':task_dict(r)})
                 m=re.fullmatch(r'/api/records/(\d+)',path)
                 if m:

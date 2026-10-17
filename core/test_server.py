@@ -63,6 +63,36 @@ class CoreApiTests(unittest.TestCase):
             provider.generate('This must not run')
         self.assertFalse(provider.status()['available'])
 
+    def test_task_schedule_fields_and_dependency_cycle_protection(self):
+        status,first=self.req('/api/tasks','POST',{'title':'Erste Aufgabe','due_at':'2027-01-10','priority':5,'estimated_minutes':45,'recurrence':{'frequency':'weekly','interval':2,'days_of_week':[0,3]},'blocked_reason':'Wartet auf Material'})
+        self.assertEqual(status,201)
+        self.assertEqual(first['item']['priority'],5)
+        self.assertEqual(first['item']['recurrence']['frequency'],'weekly')
+        self.assertEqual(first['item']['blocked_reason'],'Wartet auf Material')
+        status,second=self.req('/api/tasks','POST',{'title':'Zweite Aufgabe'})
+        self.assertEqual(status,201)
+        status,third=self.req('/api/tasks','POST',{'title':'Dritte Aufgabe'})
+        self.assertEqual(status,201)
+        first_id,second_id,third_id=first['item']['id'],second['item']['id'],third['item']['id']
+        self.assertEqual(self.req('/api/tasks','POST',{'title':'Ungültige Priorität','priority':6})[0],400)
+        self.assertEqual(self.req('/api/tasks','POST',{'title':'Ungültiges Datum','due_at':'nächstes Jahr'})[0],400)
+        self.assertEqual(self.req(f'/api/tasks/{first_id}/dependencies','POST',{'depends_on_task_id':second_id})[0],201)
+        self.assertEqual(self.req(f'/api/tasks/{second_id}/dependencies','POST',{'depends_on_task_id':third_id})[0],201)
+        self.assertEqual(self.req(f'/api/tasks/{third_id}/dependencies','POST',{'depends_on_task_id':first_id})[0],409)
+        status,deps=self.req(f'/api/tasks/{first_id}/dependencies')
+        self.assertEqual(status,200)
+        self.assertEqual(deps['items'][0]['depends_on_task_id'],second_id)
+        self.assertEqual(self.req(f'/api/tasks/{first_id}/dependencies','POST',{'depends_on_task_id':second_id})[0],409)
+        status,edited=self.req(f'/api/tasks/{first_id}','PATCH',{'due_at':None,'priority':2,'actual_minutes':30,'recurrence':{}})
+        self.assertEqual(status,200)
+        self.assertIsNone(edited['item']['due_at'])
+        self.assertEqual(edited['item']['priority'],2)
+        self.assertEqual(edited['item']['actual_minutes'],30)
+        self.assertEqual(edited['item']['recurrence'],{})
+        dep_id=deps['items'][0]['id']
+        self.assertEqual(self.req('/api/task-dependencies/'+str(dep_id),'DELETE')[0],200)
+        self.assertEqual(self.req(f'/api/tasks/{first_id}/dependencies')[1]['items'],[])
+
     def test_resource_policy_alerts_are_idempotent_and_resolve(self):
         _,created=self.req('/api/resources','POST',{'name':'Mindestbestand-Test','quantity':2,'unit':'Kisten'})
         resource_id=created['item']['id']
