@@ -481,6 +481,7 @@ class CoreApiTests(unittest.TestCase):
         _, unit=self.req('/api/units','POST',{'name':'Mira','role':'Logistik','status':'aktiv','biography':'Profilbiografie','region':'Hessen','tags':['Erste Hilfe']})
         _, resource=self.req('/api/resources','POST',{'name':'Feldfunkgerät','category':'Kommunikation','quantity':4,'unit':'Stück','location':'Depot Nord','notes':'Funktionsfähig'})
         self.req(f"/api/resources/{resource['item']['id']}/policy",'PATCH',{'minimum_quantity':2,'target_quantity':9})
+        self.req('/api/automation/rules','POST',{'rule_key':'portable-rule','name':'Portable rule','trigger_type':'resource_low_stock','action_type':'create_task','action':{'title_prefix':'Nachbestellen: '},'enabled':True})
         _, assignment=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'unit_id':unit['item']['id'],'quantity':2,'notes':'Einsatzteam'})
         _, resource_assignment=self.req('/api/assignments','POST',{'project_id':project['item']['id'],'resource_id':resource['item']['id'],'quantity':1,'notes':'Materialpaket'})
         with app.db_connect() as con:
@@ -498,6 +499,8 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(len(exported['project_assignments']),2)
         self.assertGreaterEqual(len(exported['resource_movements']),1)
         self.assertEqual(exported['resource_policies'][0]['minimum_quantity'],2)
+        self.assertEqual(len(exported['automation_rules']),1)
+        self.assertTrue(bool(exported['automation_rules'][0]['enabled']))
         self.assertEqual(len(exported['news']['items']),1)
         # Simulate IDs from an unrelated SQLite database; all foreign keys are rewritten through the export map.
         exported['records'][0]['id']=88001
@@ -544,12 +547,17 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(fresh['resource_policies'][0]['minimum_quantity'],2)
         self.assertEqual(fresh['resource_policies'][0]['target_quantity'],9)
         self.assertEqual(fresh['map_locations'][0]['task_id'],new_task)
+        imported_rules=self.req('/api/automation/rules')[1]['items']
+        self.assertEqual(len(imported_rules),1)
+        self.assertFalse(imported_rules[0]['enabled'],'Importierte Regeln müssen aus Sicherheitsgründen deaktiviert sein.')
 
     def test_schema2_without_optional_ledger_fields_remains_importable(self):
         _,resource=self.req('/api/resources','POST',{'name':'Altes Exportformat','quantity':6,'unit':'Kisten'})
         payload=self.req('/api/export')[1]
         payload.pop('resource_movements',None)
         payload.pop('resource_policies',None)
+        payload.pop('automation_rules',None)
+        self.req('/api/automation/rules','POST',{'rule_key':'keep-local-rule','name':'Lokale Regel','trigger_type':'manual','action_type':'create_task','action':{'title_prefix':'Test'},'enabled':False})
         status,result=self.req('/api/import','POST',{'data':payload})
         self.assertEqual(status,200,result)
         imported=self.req('/api/resources')[1]['items'][0]
@@ -561,6 +569,7 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(status,200)
         self.assertEqual(policy['policy']['minimum_quantity'],0)
         self.assertIsNone(policy['policy']['target_quantity'])
+        self.assertEqual(self.req('/api/automation/rules')[1]['count'],1,'Alte Schema-2-Dateien ohne Regelfeld dürfen lokale Regeln nicht löschen.')
 
     def test_portable_import_rejects_unsafe_news_links(self):
         self.req('/api/tasks','POST',{'title':'Bleibt erhalten'})

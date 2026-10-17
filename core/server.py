@@ -628,6 +628,7 @@ def build_export(con):
         'id_policy':'IDs are identifiers inside this export only; import remaps them to new local SQLite IDs.',
         'tasks':rows('SELECT * FROM tasks ORDER BY id'),
         'task_dependencies':rows('SELECT * FROM task_dependencies ORDER BY id'),
+        'automation_rules':rows('SELECT id,rule_key,name,enabled,trigger_type,action_type,action_json,risk_level,created_at,updated_at FROM automation_rules ORDER BY id'),
         'records':records,
         'map_locations':rows('SELECT l.*,p.title AS project_title,t.title AS task_title,u.name AS unit_name,rs.name AS resource_name FROM map_locations l LEFT JOIN records p ON p.id=l.project_id LEFT JOIN tasks t ON t.id=l.task_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN resources rs ON rs.id=l.resource_id ORDER BY l.id'),
         'units':[unit_dict(r) for r in con.execute('SELECT * FROM units ORDER BY id')],
@@ -667,7 +668,7 @@ def validate_portable_import(payload):
         raise ValueError('Ungültiges oder nicht unterstütztes Importformat (unterstützt werden Schema 1 und 2).')
     version=payload['schema_version']
     names=('tasks','records','map_locations') + (('units','resources','project_assignments') if version>=2 else ())
-    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000,'resource_policies':50000,'task_dependencies':100000}
+    limits={'tasks':50000,'records':50000,'map_locations':50000,'units':50000,'resources':50000,'project_assignments':100000,'resource_movements':200000,'resource_policies':50000,'task_dependencies':100000,'automation_rules':1000}
     data={}
     for name in names:
         arr=payload.get(name,[])
@@ -683,16 +684,23 @@ def validate_portable_import(payload):
         dependencies=payload.get('task_dependencies',[])
         if not isinstance(dependencies,list) or len(dependencies)>limits['task_dependencies']: raise ValueError('task_dependencies: ungültige Liste oder zu viele Einträge.')
         data['task_dependencies']=dependencies
+        rules=payload.get('automation_rules',[])
+        if not isinstance(rules,list) or len(rules)>limits['automation_rules']: raise ValueError('automation_rules: ungültige Liste oder zu viele Einträge.')
+        data['automation_rules']=rules
+        data['automation_rules_present']='automation_rules' in payload
     else:
         data['resource_movements']=[]
         data['resource_policies']=[]
         data['task_dependencies']=[]
+        data['automation_rules']=[]
+        data['automation_rules_present']=False
     if version>=2:
         for name in ('units','resources','project_assignments'):
             if name not in payload: raise ValueError(f'Schema 2 benötigt das Feld {name}.')
     if not isinstance(payload.get('settings',{}),dict): raise ValueError('Einstellungen müssen ein JSON-Objekt sein.')
     if not isinstance(payload.get('geodata',{}),dict): raise ValueError('Geodaten müssen ein JSON-Objekt sein.')
     for key,items in data.items():
+        if not isinstance(items,list): continue
         _portable_id_map(items,key)
         if version>=2 and any(item.get('id') is None for item in items): raise ValueError(f'Schema 2 benötigt für jeden Eintrag in {key} eine Export-ID.')
     for r in data['records']:
@@ -720,7 +728,7 @@ def validate_portable_import(payload):
                 geom=feature.get('geometry') if isinstance(feature,dict) else None
                 if not isinstance(geom,dict) or geom.get('type') not in ('Polygon','MultiPolygon') or not geojson_wgs84_coordinates_valid(geom.get('coordinates')): raise ValueError('Importierte Bundesland-Geometrie muss Polygon/MultiPolygon in WGS84 sein.')
     # Validate explicit package-local references before touching the database.
-    ids={name:{str(x['id']) for x in items if isinstance(x,dict) and x.get('id') is not None} for name,items in data.items()}
+    ids={name:{str(x['id']) for x in items if isinstance(x,dict) and x.get('id') is not None} for name,items in data.items() if isinstance(items,list)}
     records_by_id={str(x['id']):x for x in data['records'] if x.get('id') is not None}
     tasks_by_id={str(x['id']):x for x in data['tasks'] if x.get('id') is not None}
     units_by_id={str(x['id']):x for x in data.get('units',[]) if x.get('id') is not None}
@@ -766,6 +774,14 @@ def validate_portable_import(payload):
         for parent in dependency_graph.get(node,[]): visit_dependency(parent)
         visiting.remove(node);visited.add(node)
     for node in dependency_graph: visit_dependency(node)
+    rule_keys=set()
+    for rule in data.get('automation_rules',[]):
+        if not isinstance(rule,dict) or any(field not in rule for field in ('id','rule_key','name','trigger_type','action_type')): raise ValueError('Automationsregel ist unvollständig.')
+        if str(rule.get('rule_key')) in rule_keys: raise ValueError('Automationsregeln enthalten doppelte rule_key-Werte.')
+        rule_keys.add(str(rule.get('rule_key')))
+        try: action=json.loads(rule.get('action_json','{}')) if isinstance(rule.get('action_json','{}'),str) else rule.get('action_json',{})
+        except (ValueError,TypeError): raise ValueError('Automationsaktion ist ungültig.')
+        normalize_automation_rule({'rule_key':rule.get('rule_key'),'name':rule.get('name'),'trigger_type':rule.get('trigger_type'),'action_type':rule.get('action_type'),'action':action,'enabled':False})
     projects=_legacy_lookup([r for r in data['records'] if r.get('module')=='projects'],'title','Projekte')
     tasks=_legacy_lookup(data['tasks'],'title','Aufgaben')
     units=_legacy_lookup(data.get('units',[]),'name','Personenprofile')
@@ -841,7 +857,7 @@ def portable_import_preview(payload):
     summary={'schema_version':payload.get('schema_version') if isinstance(payload,dict) else None,
              'tasks':len(arr('tasks')),'records':len(records),'records_by_module':by_module,
              'map_locations':len(arr('map_locations')),'units':len(arr('units')),
-             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'resource_policies':len(arr('resource_policies')),'task_dependencies':len(arr('task_dependencies')),'project_assignments':len(arr('project_assignments')),
+             'resources':len(arr('resources')),'resource_movements':len(arr('resource_movements')),'resource_policies':len(arr('resource_policies')),'task_dependencies':len(arr('task_dependencies')),'automation_rules':len(arr('automation_rules')),'project_assignments':len(arr('project_assignments')),
              'settings':len(payload.get('settings',{})) if isinstance(payload,dict) and isinstance(payload.get('settings',{}),dict) else 0,
              'geodata':len(geo),'geodata_features':sum(len(v.get('features',[])) for v in geo.values() if isinstance(v,dict) and isinstance(v.get('features'),list)),
              'news_items':len(news.get('items',[])) if isinstance(news.get('items',[]),list) else 0,
@@ -914,6 +930,13 @@ def apply_portable_import(con, payload, now):
         mapped_parent=task_map.get(str(dependency['depends_on_task_id']))
         if mapped_task is None or mapped_parent is None: raise ValueError('Aufgabenabhängigkeit verweist auf eine unbekannte Aufgabe.')
         con.execute('INSERT INTO task_dependencies(task_id,depends_on_task_id,dependency_type,created_at) VALUES(?,?,?,?)',(mapped_task,mapped_parent,'finish_to_start',str(dependency.get('created_at',now))[:80]))
+    if version>=2 and data.get('automation_rules_present'):
+        for old_rule in con.execute('SELECT id FROM automation_rules ORDER BY id DESC').fetchall():
+            con.execute('DELETE FROM automation_rules WHERE id=?',(old_rule['id'],))
+        for rule in data.get('automation_rules',[]):
+            action=json.loads(rule.get('action_json','{}')) if isinstance(rule.get('action_json','{}'),str) else rule.get('action_json',{})
+            values=normalize_automation_rule({'rule_key':rule['rule_key'],'name':rule['name'],'trigger_type':rule['trigger_type'],'action_type':rule['action_type'],'action':action,'enabled':False})
+            con.execute('INSERT INTO automation_rules(rule_key,name,enabled,trigger_type,action_type,action_json,risk_level,created_at,updated_at) VALUES(?,?,0,?,?,?,?,?,?)',(values[0],values[1],values[2],values[3],values[4],values[5],str(rule.get('created_at',now))[:80],str(rule.get('updated_at',now))[:80]))
     for r in data['records']:
         cur=con.execute('INSERT INTO records(module,title,body,region,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(r['module'],str(r['title']).strip(),str(r.get('body',''))[:100000],str(r.get('region',''))[:180],json.dumps(r.get('tags',[]) if isinstance(r.get('tags',[]),list) else [],ensure_ascii=False),str(r.get('created_at',now))[:80],str(r.get('updated_at',now))[:80]))
         if r.get('id') is not None: record_map[str(r['id'])]=cur.lastrowid
@@ -1783,7 +1806,7 @@ def main():
             try: maybe_backup()
             except Exception as exc: print(f'[KOR] Automatisches Backup fehlgeschlagen: {exc}',file=sys.stderr)
             try:
-                with db_connect() as con: run_due_scheduled_jobs(con,utcnow())
+                with _db_lock, db_connect() as con: run_due_scheduled_jobs(con,utcnow())
             except Exception as exc: print(f'[KOR] Geplante Engine-Jobs fehlgeschlagen: {exc}',file=sys.stderr)
     backup_thread=threading.Thread(target=backup_loop,name='kor-background-scheduler',daemon=True);backup_thread.start()
     try:
