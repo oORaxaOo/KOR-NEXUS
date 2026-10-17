@@ -1136,16 +1136,16 @@ class AppHandler(BaseHTTPRequestHandler):
                 with db_connect() as con: batch=read_event_batch(con,cursor,100)
                 if batch['reset_required']:
                     payload=json.dumps({'cursor':batch['cursor'],'reason':'journal_gap'},separators=(',',':'))
-                    self.wfile.write(('event: reset_required\\ndata: '+payload+'\\n\\n').encode('utf-8'))
+                    self.wfile.write(('event: reset_required\ndata: '+payload+'\n\n').encode('utf-8'))
                     self.wfile.flush()
                     cursor=batch['cursor']
                 for item in batch['events']:
                     payload=json.dumps(item,ensure_ascii=False,separators=(',',':'))
-                    self.wfile.write((f"id: {item['event_id']}\\nevent: change\\ndata: {payload}\\n\\n").encode('utf-8'))
+                    self.wfile.write((f"id: {item['event_id']}\nevent: change\ndata: {payload}\n\n").encode('utf-8'))
                     cursor=item['event_id']
                 if batch['events'] or batch['reset_required']: self.wfile.flush()
                 if time.monotonic()-heartbeat>=15:
-                    self.wfile.write(b': heartbeat\\n\\n');self.wfile.flush();heartbeat=time.monotonic()
+                    self.wfile.write(b': heartbeat\n\n');self.wfile.flush();heartbeat=time.monotonic()
                 if not batch['events']: time.sleep(1)
         except (BrokenPipeError,ConnectionResetError,OSError):
             return
