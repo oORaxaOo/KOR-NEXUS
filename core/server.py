@@ -630,6 +630,10 @@ def apply_portable_import(con, payload, now):
     con.execute('BEGIN IMMEDIATE')
     con.execute('DELETE FROM map_locations'); con.execute('DELETE FROM project_assignments'); con.execute('DELETE FROM tasks'); con.execute('DELETE FROM records')
     if version>=2:
+        # Schema-2 import replaces the portable ledger too; delete newest movements first
+        # so any future reversal references are removed before their originals.
+        for movement in con.execute('SELECT id FROM resource_movements ORDER BY id DESC').fetchall():
+            con.execute('DELETE FROM resource_movements WHERE id=?',(movement['id'],))
         con.execute('DELETE FROM units'); con.execute('DELETE FROM resources')
     task_map={};record_map={};unit_map={};resource_map={}
     for t in data['tasks']:
