@@ -3,7 +3,7 @@
 Stand: 2026-10-17  
 Zielbranch: `transfer/kor-nexus-1.20.0`  
 Ausgangsbasis: `main` enthält den integrierten Stand 1.20.0; alle weiteren Änderungen erfolgen ausschließlich im Arbeitsbranch.  
-Status: Die Core-Engine-Grundlagen sind im Arbeitsbranch umgesetzt: additive SQLite-Migrationen, Ressourcen-Bewegungsledger und Bestandsrichtlinien, deterministische Warnungen, Aufgaben-Fälligkeiten und Abhängigkeiten mit Zyklusprüfung, geplante Jobs, allowlist-basierte Automationen, idempotente Routineaktionen sowie bestätigungspflichtige kritische Aktionsvorschläge. SSE mit Replay, Polling-Rückfall, Reset bei Replay-Lücken und konfigurierbarer Journal-Aufbewahrung (1.000 bis 1.000.000 Ereignisse) sind implementiert; die Aufbewahrung lässt sich in den Systemeinstellungen ändern. Die UI zeigt einen Core-Engine-/Automationsarbeitsbereich. Der provider-neutrale KI-Vertrag ist vorhanden und standardmäßig deaktiviert. Die vollständige native llama.cpp-Laufzeit bleibt bewusst zurückgestellt, bis der Kern stabil abgenommen ist. Bestehende JSON-Schema-2-Dateien bleiben kompatibel. Letzter vollständig grüner Release-Gate-Stand: Commit `b24b82a` — 48 API-Tests einschließlich echter SSE-Replay-/Live-Delivery-Prüfung mit zwei gleichzeitigen Clients, Browser-Smoke-Test und beide Jobs (portabler Qualitäts-Gate sowie nativer Arch-Paketbau mit isoliertem Installationstest) erfolgreich: [GitHub Actions](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39032781743). Die native llama.cpp-Laufzeit bleibt bis zur abschließenden Kernabnahme zurückgestellt.
+Status: Die Core-Engine-Grundlagen sind im Arbeitsbranch umgesetzt: additive SQLite-Migrationen, Ressourcen-Bewegungsledger und Bestandsrichtlinien, deterministische Warnungen, Aufgaben-Fälligkeiten und Abhängigkeiten mit Zyklusprüfung, geplante Jobs, allowlist-basierte Automationen, idempotente Routineaktionen sowie bestätigungspflichtige kritische Aktionsvorschläge. SSE mit Replay, Polling-Rückfall, Reset bei Replay-Lücken und konfigurierbarer Journal-Aufbewahrung (1.000 bis 1.000.000 Ereignisse) sind implementiert; die Aufbewahrung lässt sich in den Systemeinstellungen ändern. Die UI zeigt einen Core-Engine-/Automationsarbeitsbereich. Der provider-neutrale KI-Vertrag ist vorhanden; zusätzlich ist ein optionaler in-process llama.cpp-Adapter über `llama-cpp-python` mit lokaler GGUF-Konfiguration, read-only Beratungs-API und UI integriert. Standardmäßig bleibt die KI deaktiviert; ein manuelles Setup-Skript lädt kein Modell herunter. Reale Modell-/Hardwaretests und ein komfortabler Modellmanager bleiben offen. Bestehende JSON-Schema-2-Dateien bleiben kompatibel. Letzter vollständig grüner Release-Gate-Stand: Commit `b24b82a` — 48 API-Tests einschließlich echter SSE-Replay-/Live-Delivery-Prüfung mit zwei gleichzeitigen Clients, Browser-Smoke-Test und beide Jobs (portabler Qualitäts-Gate sowie nativer Arch-Paketbau mit isoliertem Installationstest) erfolgreich: [GitHub Actions](https://github.com/oORaxaOo/KOR-NEXUS/actions/runs/39032781743). Die Schnittstelle und optional aktivierbare Laufzeit sind umgesetzt; echte Modell-Lade-/Hardwaretests bleiben ausstehend.
 
 ## 1. Verbindliche Architekturentscheidungen
 
@@ -227,7 +227,9 @@ Parallel zum Core wird nur ein Provider-Vertrag definiert, noch keine Pflichtabh
 - Engine-/Domain-Services rufen niemals direkt ein Modell auf.
 - KI erhält ausschließlich explizit freigegebene, minimierte Kontextdaten; keine direkten Schreibrechte auf SQLite.
 - Vorschläge werden in `action_proposals` abgelegt und durch dieselben serverseitigen Aktionshandler/Bestätigungen geprüft wie manuell ausgelöste Vorschläge.
-- llama.cpp wird später als optionales natives Modul bzw. gebündelte Bibliothek mit Lizenz- und Herkunftsprüfung eingebunden. Kein separater Serverprozess als Voraussetzung, keine automatische Modell-Download-Aktion ohne Zustimmung.
+- Umgesetzt: optionaler in-process Adapter über `llama-cpp-python`; kein separater Serverprozess als Voraussetzung und kein automatischer Modell-Download. Der Nutzer wählt eine bereits vorhandene GGUF-Datei und prüft deren Lizenz.
+- Umgesetzt: lokale Beratungs-API und UI; Standardprovider deaktiviert, keine direkten DB-Schreibrechte, begrenzte Prompt-/Kontext-/Ausgabelängen.
+- Offen: modellbezogene RAM-/Speicherabschätzung, Lizenz-/Herkunftsprüfung in der UI sowie echte Hardwaretests mit ausgewählten GGUF-Modellen.
 - Modell-Dateien sind getrennte optionale Assets, nicht Bestandteil des Standardpakets. Prüfsummen, Größenlimit, freie Speicherkapazität, RAM-Schätzung und explizite Nutzerwahl vor Download/Laden.
 - Fehler, fehlender Speicher, fehlendes Modell oder deaktivierte KI beeinträchtigen niemals Core Engine, Live-Updates oder bestehende Module.
 
@@ -339,5 +341,5 @@ Parallel zum Core wird nur ein Provider-Vertrag definiert, noch keine Pflichtabh
 - Regeln und Routinen sind idempotent, protokolliert und serverseitig beschränkt.
 - Kritische Aktionen benötigen bestätigte, unveränderte Aktionspayloads.
 - Core Engine läuft ohne KI, Netzwerk und externe KI-Prozesse.
-- llama.cpp ist optional und wird erst nach Stabilisierung des Kerns als native Laufzeit freigegeben.
+- llama.cpp bleibt optional; die Adapterintegration ist vorhanden, während echte Modell-/Hardwaretests noch ausstehen.
 - Alle bestehenden und neuen CI-Gates sind grün; keine Änderungen direkt auf `main`.
