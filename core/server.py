@@ -1166,14 +1166,39 @@ def main():
     def backup_loop():
         while not stop_backups.wait(30):maybe_backup()
     backup_thread=threading.Thread(target=backup_loop,name='kor-backup-scheduler',daemon=True);backup_thread.start()
-    try:
-        while not server.shutdown_event.is_set():server.handle_request()
-    except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')
-    finally:
-        stop_backups.set();server.server_close()
+    # LAN discovery powers the live HUD; beacons contain no user data.
+    try: mesh.start()
+    except Exception as exc: add_system_log('WARN','MESH','Netzwerkerkennung konnte nicht starten: '+str(exc))
+    native_started=False
+    if os.environ.get('KOR_NO_BROWSER')!='1' and os.environ.get('KOR_NATIVE_WINDOW','auto')!='0':
         try:
-            if json.loads(runtime_path.read_text(encoding='utf-8')).get('port')==port:runtime_path.unlink(missing_ok=True)
-        except Exception:pass
+            from core.window import start_native_app
+            def serve_http():
+                try: server.serve_forever(poll_interval=0.25)
+                except Exception as exc: add_system_log('ERROR','HTTP','Server-Thread beendet: '+str(exc))
+            server_thread=threading.Thread(target=serve_http,name='kor-http-server',daemon=True);server_thread.start()
+            try:
+                start_native_app(url)
+                native_started=True
+            finally:
+                server.shutdown()
+        except (ImportError,ModuleNotFoundError) as exc:
+            add_system_log('WARN','WINDOW','PyQt6 WebEngine nicht installiert; verwende Browser-Fenster. '+str(exc))
+        except Exception as exc:
+            add_system_log('ERROR','WINDOW','Natives Fenster konnte nicht gestartet werden; verwende Browser-Fallback. '+str(exc))
+    if not native_started and not server.shutdown_event.is_set():
+        if os.environ.get('KOR_NO_BROWSER')!='1':
+            threading.Timer(0.35,lambda:open_app_or_report(url)).start()
+        try:
+            while not server.shutdown_event.is_set():server.handle_request()
+        except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')
+    stop_backups.set()
+    try: mesh.stop()
+    except Exception: pass
+    server.server_close()
+    try:
+        if json.loads(runtime_path.read_text(encoding='utf-8')).get('port')==port:runtime_path.unlink(missing_ok=True)
+    except Exception:pass
     return 0
 
 if __name__=='__main__': raise SystemExit(main())
