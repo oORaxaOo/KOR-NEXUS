@@ -14,7 +14,7 @@ sha256sums=('1489c6e83eba03e6856f04b39ce3ce1a20deca5e7b901f3b6ac0d30a19eb4ebb')
 
 build() {
   cd "$srcdir"
-  python -m py_compile core/server.py core/window.py core/github_integration.py
+  python -m py_compile core/server.py core/window.py core/media.py core/github_integration.py
 }
 
 check() {
@@ -30,7 +30,7 @@ package() {
     "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/scalable/apps" \
     "$pkgdir/usr/share/licenses/kor-workstation" "$pkgdir/usr/share/doc/kor-workstation"
   install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/scripts" "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/web/js"
-  install -m644 core/server.py core/window.py core/__init__.py core/mesh.py core/simulation.py core/github_integration.py "$pkgdir/opt/kor-workstation/core/"
+  install -m644 core/server.py core/window.py core/__init__.py core/mesh.py core/simulation.py core/media.py core/github_integration.py "$pkgdir/opt/kor-workstation/core/"
   install -m755 scripts/import-bkg-data.py "$pkgdir/opt/kor-workstation/scripts/"
   install -m644 web/index.html web/github.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
   install -m644 web/js/hud-alerts.js web/js/hud.js web/js/media-hub.js web/js/github-center.js "$pkgdir/opt/kor-workstation/web/js/"

@@ -33,7 +33,7 @@ printf 'preserve-geo' > "$TMP/data/kor-workstation/geodata/preserve.geojson"
 chmod 600 "$TMP/data/kor-workstation/backups/preserve.sqlite3" "$TMP/data/kor-workstation/geodata/preserve.geojson"
 pacman -U --noconfirm "$PKG"
 # Verify installed paths, executable bits, desktop entry and offline map payload.
-for f in /opt/kor-workstation/core/server.py /opt/kor-workstation/core/github_integration.py /opt/kor-workstation/web/github.html /opt/kor-workstation/web/js/github-center.js /opt/kor-workstation/web/geodata/world.geojson /usr/bin/kor-workstation /usr/bin/kor-workstation-stop /usr/share/applications/kor-workstation.desktop; do
+for f in /opt/kor-workstation/core/server.py /opt/kor-workstation/core/media.py /opt/kor-workstation/core/github_integration.py /opt/kor-workstation/web/github.html /opt/kor-workstation/web/js/github-center.js /opt/kor-workstation/web/geodata/world.geojson /usr/bin/kor-workstation /usr/bin/kor-workstation-stop /usr/share/applications/kor-workstation.desktop; do
   [[ -e "$f" ]] || { echo "Missing installed path: $f" >&2; exit 1; }
 done
 [[ -x /usr/bin/kor-workstation && -x /usr/bin/kor-workstation-stop ]]

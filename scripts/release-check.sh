@@ -26,14 +26,14 @@ for file,pattern in checks.items():
  if file=='core/test_server.py' and text.count(v)<2: raise SystemExit('FEHLER: API-Test-Fixtures enthalten uneinheitliche Versionsangaben')
 print(f'OK Versionskonsistenz: {v}')
 PY
-python3 -m py_compile core/server.py core/test_server.py core/github_integration.py tests/test_github_integration.py scripts/qa-preview-playwright.py scripts/create-source-archive.py scripts/import-bkg-data.py scripts/test-advanced-features.py core/window.py core/mesh.py core/simulation.py
+python3 -m py_compile core/server.py core/test_server.py core/media.py core/github_integration.py tests/test_github_integration.py scripts/qa-preview-playwright.py scripts/create-source-archive.py scripts/import-bkg-data.py scripts/test-advanced-features.py core/window.py core/mesh.py core/simulation.py
 bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh flatpak/launch.sh
 if command -v node >/dev/null 2>&1; then node --check web/app.js; node --check web/js/hud-alerts.js; node --check web/js/hud.js; node --check web/js/github-center.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
 bash scripts/verify-source.sh
 python3 - <<'PYFILES'
 from pathlib import Path
 required = [
- 'core/server.py','core/github_integration.py','tests/test_github_integration.py','core/__init__.py','web/index.html','web/github.html','web/styles.css','web/app.js','web/js/github-center.js','GITHUB_CENTER.md',
+ 'core/server.py','core/media.py','core/github_integration.py','tests/test_github_integration.py','core/__init__.py','web/index.html','web/github.html','web/styles.css','web/app.js','web/js/github-center.js','GITHUB_CENTER.md',
  'web/geodata/world.geojson','packaging/kor-workstation-launcher.sh',
  'packaging/kor-workstation-stop.sh','packaging/kor-workstation.desktop',
  'packaging/icons/kor-workstation.svg','LICENSE','README.md','EXPORT_SCHEMA.md',
