@@ -26,9 +26,9 @@ for file,pattern in checks.items():
  if file=='core/test_server.py' and text.count(v)<2: raise SystemExit('FEHLER: API-Test-Fixtures enthalten uneinheitliche Versionsangaben')
 print(f'OK Versionskonsistenz: {v}')
 PY
-python3 -m py_compile core/server.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py scripts/import-bkg-data.py scripts/test-advanced-features.py core/mesh.py core/simulation.py
+python3 -m py_compile core/server.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py scripts/import-bkg-data.py scripts/test-advanced-features.py core/window.py core/mesh.py core/simulation.py
 bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh flatpak/launch.sh
-if command -v node >/dev/null 2>&1; then node --check web/app.js; node --check web/js/hud-alerts.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
+if command -v node >/dev/null 2>&1; then node --check web/app.js; node --check web/js/hud-alerts.js; node --check web/js/hud.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
 bash scripts/verify-source.sh
 python3 - <<'PYFILES'
 from pathlib import Path
