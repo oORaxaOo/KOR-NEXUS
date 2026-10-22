@@ -14,6 +14,8 @@ except ModuleNotFoundError:
     from core import mesh
     from core.simulation import simulate_resource_runway
 
+from core.media import check_emergency_readiness, media_path, media_mime, init_media_db
+
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
 ROOT = Path(__file__).resolve().parents[1]
@@ -706,6 +708,53 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('GET','API',path)
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if path == '/api/media/readiness':
+            try:
+                init_media_db()
+                return self.send_json(check_emergency_readiness())
+            except (OSError, sqlite3.Error) as exc:
+                add_system_log('ERROR','MEDIA','Bereitschaftsprüfung fehlgeschlagen: '+str(exc))
+                return self.fail(500,'Lokales Medienarchiv konnte nicht geprüft werden.')
+        if path.startswith('/local-media/'):
+            filename=urllib.parse.unquote(path[len('/local-media/'):])
+            target=media_path(filename)
+            if target is None: return self.fail(404,'Lokale Mediendatei nicht gefunden.')
+            try:
+                size=target.stat().st_size
+                start,end=0,size-1
+                status=200
+                range_header=self.headers.get('Range','')
+                if range_header.startswith('bytes=') and ',' not in range_header:
+                    spec=range_header[6:].split('-',1)
+                    try:
+                        if spec[0]:
+                            start=int(spec[0]); end=min(int(spec[1]),size-1) if spec[1] else size-1
+                        elif spec[1]:
+                            suffix=int(spec[1]); start=max(0,size-suffix); end=size-1
+                        else: raise ValueError()
+                        if start<0 or start>=size or end<start: raise ValueError()
+                        status=206
+                    except (ValueError,IndexError):
+                        self.send_response(416); self.send_header('Content-Range',f'bytes */{size}'); self.send_header('Content-Length','0'); self.end_headers(); return
+                length=max(0,end-start+1)
+                self.send_response(status)
+                self.send_header('Content-Type',media_mime(target))
+                self.send_header('Content-Length',str(length))
+                self.send_header('Accept-Ranges','bytes')
+                self.send_header('X-Content-Type-Options','nosniff')
+                self.send_header('Cache-Control','no-store')
+                if status==206:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
+                self.end_headers()
+                with target.open('rb') as stream:
+                    stream.seek(start); remaining=length
+                    while remaining:
+                        chunk=stream.read(min(256*1024,remaining))
+                        if not chunk: break
+                        self.wfile.write(chunk); remaining-=len(chunk)
+                return
+            except (OSError, BrokenPipeError) as exc:
+                add_system_log('WARN','MEDIA','Stream unterbrochen: '+str(exc))
+                return
         if path.startswith('/api/'):
             maybe_backup()
             if path=='/api/health': return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'database':'SQLite','data_dir':str(DATA_HOME),'backup_count':len(list(BACKUP_DIR.glob('kor-*.sqlite3'))),'python':sys.version.split()[0],'system':get_system_health()})
