@@ -919,7 +919,24 @@ class AppHandler(BaseHTTPRequestHandler):
                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
                     )
                     _ide_port = port
-                    add_system_log('INFO', 'CODE IDE', 'Lokale Code-IDE gestartet.')
+                    ready = False
+                    for _ in range(30):
+                        if _ide_process.poll() is not None:
+                            break
+                        try:
+                            with socket.create_connection(('127.0.0.1', port), timeout=0.1):
+                                ready = True
+                                break
+                        except OSError:
+                            time.sleep(0.1)
+                    if not ready:
+                        if _ide_process.poll() is None:
+                            _ide_process.terminate()
+                        _ide_process = None
+                        _ide_port = None
+                        add_system_log('ERROR', 'CODE IDE', 'code-server wurde nicht rechtzeitig erreichbar.')
+                        return self.fail(503, 'code-server ist nicht rechtzeitig gestartet. Prüfe die lokale Installation.')
+                    add_system_log('INFO', 'CODE IDE', 'Lokale Code-IDE gestartet und erreichbar.')
                     return self.send_json({'ok': True, 'url': f'http://127.0.0.1:{port}/', 'running': True, 'workspace': str(workspace)}, status=202)
                 except (OSError, ValueError) as exc:
                     _ide_process = None
