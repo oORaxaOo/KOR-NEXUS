@@ -46,6 +46,7 @@ _instance_lock_fd = None
 _ide_lock = threading.Lock()
 _ide_process = None
 _ide_port = None
+_ide_workspace = None
 
 
 def _ide_workspace_roots():
@@ -65,11 +66,12 @@ def _ide_workspace_roots():
 
 def _stop_code_ide():
     """Stop the IDE process group when the KOR-NEXUS server shuts down."""
-    global _ide_process, _ide_port
+    global _ide_process, _ide_port, _ide_workspace
     with _ide_lock:
         process = _ide_process
         _ide_process = None
         _ide_port = None
+        _ide_workspace = None
         if process is None or process.poll() is not None:
             return
         try:
@@ -773,7 +775,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         continue
             executable = shutil.which('code-server')
             running = bool(_ide_process and _ide_process.poll() is None and _ide_port)
-            return self.send_json({'ok': True, 'available': bool(executable), 'running': running, 'url': f'http://127.0.0.1:{_ide_port}/' if running else None, 'workspaces': workspaces[:100], 'install_hint': 'Installiere code-server (Arch: z. B. über AUR) und starte KOR-NEXUS neu.' if not executable else None})
+            return self.send_json({'ok': True, 'available': bool(executable), 'running': running, 'url': f'http://127.0.0.1:{_ide_port}/' if running else None, 'workspaces': workspaces[:100], 'active_workspace': str(_ide_workspace) if running and _ide_workspace else None, 'install_hint': 'Installiere code-server (Arch: z. B. über AUR) und starte KOR-NEXUS neu.' if not executable else None})
         if path == '/api/github/status':
             try:
                 info=github_integration.overview()
@@ -926,10 +928,12 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.fail(400, 'Arbeitsordner liegt außerhalb der freigegebenen Workspace-Wurzeln.')
             except (OSError, RuntimeError, ValueError):
                 return self.fail(400, 'Arbeitsordner existiert nicht oder ist ungültig.')
-            global _ide_process, _ide_port
+            global _ide_process, _ide_port, _ide_workspace
             with _ide_lock:
                 if _ide_process and _ide_process.poll() is None and _ide_port:
-                    return self.send_json({'ok': True, 'url': f'http://127.0.0.1:{_ide_port}/', 'running': True, 'workspace': str(workspace)})
+                    if _ide_workspace != workspace:
+                        return self.send_json({'ok': False, 'error': 'Die IDE läuft bereits mit einem anderen Arbeitsordner. Schließe sie zuerst, bevor du ein anderes Projekt startest.'}, status=409)
+                    return self.send_json({'ok': True, 'url': f'http://127.0.0.1:{_ide_port}/', 'running': True, 'workspace': str(_ide_workspace)})
                 try:
                     with socket.socket() as probe:
                         probe.bind(('127.0.0.1', 0))
@@ -957,13 +961,16 @@ class AppHandler(BaseHTTPRequestHandler):
                             _ide_process.terminate()
                         _ide_process = None
                         _ide_port = None
+                        _ide_workspace = None
                         add_system_log('ERROR', 'CODE IDE', 'code-server wurde nicht rechtzeitig erreichbar.')
                         return self.fail(503, 'code-server ist nicht rechtzeitig gestartet. Prüfe die lokale Installation.')
+                    _ide_workspace = workspace
                     add_system_log('INFO', 'CODE IDE', 'Lokale Code-IDE gestartet und erreichbar.')
                     return self.send_json({'ok': True, 'url': f'http://127.0.0.1:{port}/', 'running': True, 'workspace': str(workspace)}, status=202)
                 except (OSError, ValueError) as exc:
                     _ide_process = None
                     _ide_port = None
+                    _ide_workspace = None
                     add_system_log('ERROR', 'CODE IDE', 'Start fehlgeschlagen: ' + str(exc))
                     return self.fail(503, 'Code-IDE konnte nicht gestartet werden.')
         if path.startswith('/api/github/'):
