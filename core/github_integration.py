@@ -130,3 +130,11 @@ def dispatch_workflow(owner, repo, workflow, branch):
     request("POST","/repos/"+_repo(owner,repo)+"/actions/workflows/"+urllib.parse.quote(workflow,safe="")+"/dispatches",
             {"ref":branch})
     return {"dispatched":True,"workflow":workflow,"branch":branch}
+
+def create_pull_request(owner, repo, title, head, base, body=""):
+    if not isinstance(title,str) or not title.strip() or len(title)>200: raise GitHubError("Der Titel muss 1–200 Zeichen lang sein.")
+    if not isinstance(head,str) or not head or len(head)>240 or not isinstance(base,str) or not base or len(base)>240: raise GitHubError("Head- und Basis-Branch sind erforderlich.")
+    if head == base: raise GitHubError("Quell- und Ziel-Branch müssen unterschiedlich sein.")
+    if not isinstance(body,str) or len(body)>10000: raise GitHubError("Der Beschreibungstext ist zu lang.")
+    result=request("POST","/repos/"+_repo(owner,repo)+"/pulls",{"title":title.strip(),"head":head,"base":base,"body":body})
+    return {"number":result.get("number"),"html_url":result.get("html_url"),"title":result.get("title"),"state":result.get("state")}
