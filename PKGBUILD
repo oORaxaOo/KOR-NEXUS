@@ -32,7 +32,7 @@ package() {
   install -m644 core/server.py core/window.py core/__init__.py core/mesh.py core/simulation.py "$pkgdir/opt/kor-workstation/core/"
   install -m755 scripts/import-bkg-data.py "$pkgdir/opt/kor-workstation/scripts/"
   install -m644 web/index.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
-  install -m644 web/js/hud-alerts.js web/js/hud.js "$pkgdir/opt/kor-workstation/web/js/"
+  install -m644 web/js/hud-alerts.js web/js/hud.js web/js/media-hub.js "$pkgdir/opt/kor-workstation/web/js/"
   install -m644 web/geodata/world.geojson "$pkgdir/opt/kor-workstation/web/geodata/world.geojson"
   install -m755 packaging/kor-workstation-launcher.sh "$pkgdir/usr/bin/kor-workstation"
   install -m755 packaging/kor-workstation-stop.sh "$pkgdir/usr/bin/kor-workstation-stop"
