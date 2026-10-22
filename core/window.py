@@ -34,6 +34,7 @@ class KorNexusPopupWindow(QMainWindow):
 
     def __init__(self, root_window: "KorNexusWindow", profile: QWebEngineProfile) -> None:
         super().__init__(root_window)
+        self.setWindowFlag(Qt.WindowType.Window, True)
         self.root_window = root_window
         self.setWindowTitle("KOR-NEXUS // WORKBENCH")
         self.resize(1280, 820)
