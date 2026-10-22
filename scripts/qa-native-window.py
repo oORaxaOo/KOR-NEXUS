@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
 from functools import partial
@@ -18,6 +19,7 @@ from PyQt6.QtWidgets import QApplication
 from core.window import KorNexusWindow
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 WEB = ROOT / "web"
 
 
