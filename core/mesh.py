@@ -101,11 +101,14 @@ def _broadcast() -> None:
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     try:
         log("INFO", "MESH", "LAN-Beacons werden alle 10 Sekunden gesendet.")
-        while not _stop.wait(10):
+        while not _stop.is_set():
+            # Announce immediately on startup, then refresh presence every 10 seconds.
             try:
                 sock.sendto(BEACON, ("255.255.255.255", PORT))
             except OSError as exc:
                 log("WARN", "MESH", f"UDP-Senden nicht verfügbar: {exc}")
+            if _stop.wait(10):
+                break
     finally:
         sock.close()
 
