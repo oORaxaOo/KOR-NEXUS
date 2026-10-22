@@ -59,7 +59,7 @@ Vor dem endgültigen JSON-Import zeigt die Oberfläche eine serverseitig validie
 
 Die Kommandozentrale bietet über **⌘ CODE IDE** eine lokale Code Workbench. Sie verwendet optional `code-server` für Editor, integriertes Terminal, Erweiterungen und Sprachwerkzeuge; KOR-NEXUS installiert diesen zusätzlichen Dienst nicht stillschweigend. Auf Arch Linux muss `code-server` separat aus einer vertrauenswürdigen Paketquelle installiert werden (je nach verfügbarer Quelle ggf. AUR). Danach KOR-NEXUS neu starten und die Code Workbench öffnen.
 
-- Standardmäßig werden vorhandene Projektordner unter dem Verzeichnis des KOR-NEXUS-Projekts und `~/Projects` angeboten. Andere Wurzeln können mit `KOR_WORKSPACE_ROOTS=/pfad/eins:/pfad/zwei` festgelegt werden.
+- Standardmäßig werden das KOR-NEXUS-Repository selbst (nur bei vorhandenem `.git`) und `~/Projects` angeboten. Das gesamte Home-Verzeichnis wird ausdrücklich nicht pauschal freigegeben. Weitere Wurzeln können bewusst mit `KOR_WORKSPACE_ROOTS=/pfad/eins:/pfad/zwei` festgelegt werden.
 - Die IDE wird erst nach einer bewussten Aktion gestartet, bindet an `127.0.0.1`, deaktiviert Telemetrie und nutzt ein privates Benutzer-Datenverzeichnis. Die URL wird lokal geöffnet; der Editor läuft in einem separaten Browser-Tab.
 - Das Starten der IDE führt keine Projektbefehle aus. Git-Änderungen, Tests, Commits, Pushes und Merges bleiben unter deiner Kontrolle. Keine Zugangstokens in Quellcode oder Commits speichern.
 - Wenn `code-server` nicht installiert ist, bleiben alle anderen KOR-NEXUS-Module verfügbar; die Oberfläche zeigt den fehlenden Dienst an.
