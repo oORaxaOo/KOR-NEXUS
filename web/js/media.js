@@ -25,8 +25,10 @@ function render(items){
   const detail=document.createElement('small');detail.textContent=(item.category||'Medium')+' · '+(item.available?size(item.size_bytes):'FEHLT / NICHT LESBAR');
   main.append(title,detail);
   const badge=document.createElement('span');badge.className='cockpit-file-status';badge.textContent=item.available?'BEREIT':'FEHLT';
+  const favorite=document.createElement('button');favorite.type='button';favorite.className='btn ghost small';favorite.textContent=item.is_favorite?'★':'☆';favorite.setAttribute('aria-label',item.is_favorite?'Favorit entfernen':'Als Notfall-Favorit markieren');favorite.title=favorite.getAttribute('aria-label');
+  favorite.addEventListener('click',async()=>{favorite.disabled=true;try{const response=await fetch('/api/media/favorite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,favorite:!item.is_favorite})});if(!response.ok)throw Error('Speichern fehlgeschlagen');await refresh()}catch(e){status('Favorit konnte nicht gespeichert werden.')}finally{favorite.disabled=false}});
   const button=document.createElement('button');button.type='button';button.className='btn ghost small';button.textContent='▶';button.disabled=!item.available;button.setAttribute('aria-label','Abspielen: '+item.title);button.addEventListener('click',()=>play(item));
-  row.append(main,badge,button);host.append(row);
+  row.append(main,badge,favorite,button);host.append(row);
  }
 }
 async function refresh(){
