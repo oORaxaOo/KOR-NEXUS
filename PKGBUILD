@@ -1,7 +1,7 @@
 # Maintainer: KOR-NEXUS project
 pkgname=kor-workstation
 pkgver=1.20.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Lokale SQLite-Workstation für Kor-Wissen, Projekte, Atlas und RSS'
 arch=('any')
 license=('custom:KOR-Project')
