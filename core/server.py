@@ -1289,34 +1289,6 @@ class AppHandler(BaseHTTPRequestHandler):
         return self.fail(404,'Endpunkt nicht gefunden.')
 
 
-def open_app(url):
-    import subprocess
-    # Chromium/Chrome app mode gives a separate window. Other browsers still work in a tab.
-    candidates=[os.environ.get('KOR_BROWSER',''), 'chromium','chromium-browser','google-chrome-stable','google-chrome','firefox']
-    for c in candidates:
-        if not c:continue
-        exe=shutil.which(c)
-        if not exe:continue
-        name=Path(exe).name.lower()
-        args=[exe]
-        if 'chrom' in name or 'chrome' in name:args += ['--app='+url,'--no-first-run','--disable-session-crashed-bubble']
-        else:args += [url]
-        try:subprocess.Popen(args,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True);return True
-        except OSError:pass
-    for c in ('xdg-open','gio'):
-        exe=shutil.which(c)
-        if exe:
-            try:subprocess.Popen([exe,url] if c=='xdg-open' else [exe,'open',url],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True);return True
-            except OSError:pass
-    return False
-
-
-def open_app_or_report(url):
-    if open_app(url): return True
-    print('[KOR] Kein unterstützter Browser gefunden. Installiere Chromium, Firefox oder xdg-utils; KOR-NEXUS läuft lokal weiter unter '+url, file=sys.stderr)
-    return False
-
-
 def active_instance(url):
     try:
         with urllib.request.urlopen(url.rstrip('/')+'/api/health',timeout=1.2) as response:
@@ -1349,8 +1321,7 @@ def main():
                 if 1024<=prior_port<=65535:
                     prior_url=f'http://127.0.0.1:{prior_port}/'
                     if active_instance(prior_url):
-                        if os.environ.get('KOR_NO_BROWSER')!='1': open_app_or_report(prior_url)
-                        print(f'{APP_NAME} läuft bereits: {prior_url}');return 0
+                        print(f'{APP_NAME} läuft bereits in seiner Desktop-Anwendung: {prior_url}');return 0
             except Exception:
                 pass
             time.sleep(0.1)
@@ -1364,7 +1335,7 @@ def main():
             if 1024<=prior_port<=65535:
                 prior_url=f'http://127.0.0.1:{prior_port}/'
                 if active_instance(prior_url):
-                    open_app_or_report(prior_url);print(f'{APP_NAME} läuft bereits: {prior_url}');return 0
+                    print(f'{APP_NAME} läuft bereits in seiner Desktop-Anwendung: {prior_url}');return 0
         except Exception:
             pass
     port=8765
@@ -1373,8 +1344,7 @@ def main():
     except OSError:
         default_url=f'http://127.0.0.1:{port}/'
         if active_instance(default_url):
-            if os.environ.get('KOR_NO_BROWSER')!='1':open_app_or_report(default_url)
-            print(f'{APP_NAME} läuft bereits: {default_url}');return 0
+            print(f'{APP_NAME} läuft bereits in seiner Desktop-Anwendung: {default_url}');return 0
         # If an unrelated local service occupies the preferred port, choose a free
         # loopback port automatically rather than asking the user to troubleshoot.
         try:
@@ -1393,8 +1363,6 @@ def main():
         os.chmod(runtime_path,0o600)
     except OSError as exc:print(f'[KOR] Hinweis: Laufzeitstatus nicht speicherbar: {exc}',file=sys.stderr)
     print(f'{APP_NAME} {VERSION}');print(f'Datenbank: {DB_PATH}');print(f'Backups: {BACKUP_DIR}');print(f'Lokale Oberfläche: {url}')
-    if os.environ.get('KOR_NO_BROWSER')!='1':
-        threading.Timer(0.35,lambda:open_app_or_report(url)).start()
     stop_backups=threading.Event();server.shutdown_event=threading.Event()
     def backup_loop():
         while not stop_backups.wait(30):maybe_backup()
@@ -1403,9 +1371,15 @@ def main():
     try: mesh.start()
     except Exception as exc: add_system_log('WARN','MESH','Netzwerkerkennung konnte nicht starten: '+str(exc))
     native_started=False
-    if os.environ.get('KOR_NO_BROWSER')!='1' and os.environ.get('KOR_NATIVE_WINDOW','auto')!='0':
+    native_error=False
+    headless_mode=(os.environ.get('KOR_NO_BROWSER')=='1' or os.environ.get('KOR_NATIVE_WINDOW')=='0')
+    if not headless_mode:
         try:
             from core.window import start_native_app
+        except (ImportError,ModuleNotFoundError) as exc:
+            native_error=True
+            print('[KOR] Das eigenständige Desktop-Fenster kann nicht gestartet werden. Installiere die Pakete python-pyqt6 und python-pyqt6-webengine. Es wird absichtlich kein Browser geöffnet. Details: '+str(exc),file=sys.stderr)
+        else:
             def serve_http():
                 try: server.serve_forever(poll_interval=0.25)
                 except Exception as exc: add_system_log('ERROR','HTTP','Server-Thread beendet: '+str(exc))
@@ -1413,18 +1387,16 @@ def main():
             try:
                 start_native_app(url)
                 native_started=True
+            except Exception as exc:
+                native_error=True
+                add_system_log('ERROR','WINDOW','Eigenständiges Desktop-Fenster konnte nicht gestartet werden: '+str(exc))
+                print('[KOR] Das eigenständige Desktop-Fenster konnte nicht gestartet werden. Es wird absichtlich kein Browser geöffnet. Details: '+str(exc),file=sys.stderr)
             finally:
                 server.shutdown()
-        except (ImportError,ModuleNotFoundError) as exc:
-            add_system_log('WARN','WINDOW','PyQt6 WebEngine nicht installiert; verwende Browser-Fenster. '+str(exc))
-        except Exception as exc:
-            add_system_log('ERROR','WINDOW','Natives Fenster konnte nicht gestartet werden; verwende Browser-Fallback. '+str(exc))
-    if not native_started and not server.shutdown_event.is_set():
-        if os.environ.get('KOR_NO_BROWSER')!='1':
-            threading.Timer(0.35,lambda:open_app_or_report(url)).start()
+    if headless_mode and not server.shutdown_event.is_set():
         try:
             while not server.shutdown_event.is_set():server.handle_request()
-        except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')
+        except KeyboardInterrupt:print('\\nKOR-NEXUS wird beendet.')
     stop_backups.set()
     _stop_code_ide()
     try: mesh.stop()
@@ -1433,6 +1405,6 @@ def main():
     try:
         if json.loads(runtime_path.read_text(encoding='utf-8')).get('port')==port:runtime_path.unlink(missing_ok=True)
     except Exception:pass
-    return 0
+    return 1 if native_error else 0
 
 if __name__=='__main__': raise SystemExit(main())
