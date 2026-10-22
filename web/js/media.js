@@ -52,6 +52,7 @@ function emergency(){
  const ready=cached.filter(i=>i.available);
  if(!ready.length){status('KEINE LOKALEN MEDIEN. Lege zuerst Dateien in den angezeigten Archivordner.');return}
  document.body.classList.add('cockpit-active');
+ if(!document.fullscreenElement&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});
  const chosen=ready.find(i=>i.is_favorite)||ready[0];
  play(chosen);
 }
