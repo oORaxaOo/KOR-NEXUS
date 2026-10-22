@@ -508,7 +508,7 @@ class CoreApiTests(unittest.TestCase):
             (repository / '.git').mkdir()
             project = root / 'Kor-Motorforge'
             project.mkdir()
-            (project / 'pyproject.toml').write_text("[project]\\nname='kor-motorforge'\\n", encoding='utf-8')
+            (project / 'pyproject.toml').write_text("[project]\nname='kor-motorforge'\n", encoding='utf-8')
             unrelated = root / 'private-random-folder'
             unrelated.mkdir()
             with patch.dict('os.environ', {'KOR_WORKSPACE_ROOTS': str(root)}), patch('core.server.shutil.which', return_value='/usr/bin/code-server'):
