@@ -22,6 +22,16 @@ if './code.html' not in html: raise SystemExit('FEHLER: Code Workbench ist nicht
 code_html=Path('web/code.html').read_text()
 if "api('/ide/status')" not in code_html or "api('/ide/start'," not in code_html: raise SystemExit('FEHLER: Code Workbench API-Anbindung fehlt')
 if "127.0.0.1" not in Path('core/server.py').read_text(): raise SystemExit('FEHLER: lokaler Loopback-Bind der Code-IDE fehlt')
+server_source=Path('core/server.py').read_text()
+window_source=Path('core/window.py').read_text()
+if 'def open_app(' in server_source or 'open_app_or_report' in server_source:
+    raise SystemExit('FEHLER: externer Browser-Fallback ist noch im Server vorhanden')
+if 'from core.window import start_native_app' not in server_source:
+    raise SystemExit('FEHLER: nativer Desktop-Start ist nicht in den Server integriert')
+if 'def createWindow(self, window_type)' not in window_source or 'KorNexusPopupWindow' not in window_source:
+    raise SystemExit('FEHLER: Web-Popups werden nicht in eigenständige Qt-Fenster geleitet')
+if 'Es wird absichtlich kein Browser geöffnet.' not in server_source:
+    raise SystemExit('FEHLER: nativer Startfehler wird nicht ohne Browser-Fallback behandelt')
 if 'web/code.html' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: Code Workbench fehlt im Arch-Paket')
 github_html=Path('web/github.html').read_text()
 if './js/github-center.js' not in github_html: raise SystemExit('FEHLER: GitHub-UI-Skript nicht eingebunden')
