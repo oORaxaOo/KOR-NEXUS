@@ -3,17 +3,21 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 command -v python3 >/dev/null 2>&1 || { echo 'Fehler: Python 3 fehlt.' >&2; exit 2; }
-python3 -m py_compile core/server.py core/test_server.py
+python3 -m py_compile core/server.py core/test_server.py core/mesh.py core/simulation.py scripts/import-bkg-data.py scripts/test-advanced-features.py
+python3 scripts/test-advanced-features.py
 printf 'OK  Python-Syntax und Kernmodule\n'
 python3 - <<'PY'
 import json
 from pathlib import Path
-required=['core/__init__.py','core/server.py','core/test_server.py','web/index.html','web/styles.css','web/app.js','web/geodata/world.geojson','launch.sh','stop.sh','install-user.sh','uninstall-user.sh','packaging/kor-workstation.desktop','packaging/kor-workstation-launcher.sh','packaging/kor-workstation-stop.sh','packaging/icons/kor-workstation.svg','scripts/build-arch-package.sh','scripts/test-installation.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','PKGBUILD','README.md','EXPORT_SCHEMA.md','CHANGELOG.md','DECISIONS.md','PROJECT_STATUS.md']
+required=['core/__init__.py','core/server.py','core/test_server.py','core/mesh.py','core/simulation.py','scripts/import-bkg-data.py','scripts/test-advanced-features.py','web/js/hud-alerts.js','org.oORaxaOo.KorNexus.json','flatpak/launch.sh','flatpak/org.oORaxaOo.KorNexus.desktop','KDE_PLASMA_HUD.md','web/index.html','web/styles.css','web/app.js','web/geodata/world.geojson','launch.sh','stop.sh','install-user.sh','uninstall-user.sh','packaging/kor-workstation.desktop','packaging/kor-workstation-launcher.sh','packaging/kor-workstation-stop.sh','packaging/icons/kor-workstation.svg','scripts/build-arch-package.sh','scripts/test-installation.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','PKGBUILD','README.md','EXPORT_SCHEMA.md','CHANGELOG.md','DECISIONS.md','PROJECT_STATUS.md']
 for name in required:
     p=Path(name)
     if not p.is_file() or p.stat().st_size==0: raise SystemExit(f'FEHLER: Datei fehlt/leer: {name}')
     print('OK ',name)
 html=Path('web/index.html').read_text()
+if 'hud-alerts.js' not in html: raise SystemExit('FEHLER: HUD-Erweiterung nicht eingebunden')
+manifest=json.loads(Path('org.oORaxaOo.KorNexus.json').read_text())
+if manifest.get('app-id')!='org.oORaxaOo.KorNexus' or not manifest.get('modules'): raise SystemExit('FEHLER: Flatpak-Manifest ungültig')
 for asset in ('./styles.css','./app.js'):
     if asset not in html: raise SystemExit(f'FEHLER: {asset} nicht eingebunden')
 if "fetch('/api'+path" not in Path('web/app.js').read_text(): raise SystemExit('FEHLER: API-Client fehlt')

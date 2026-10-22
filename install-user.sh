@@ -25,12 +25,12 @@ if [[ -s "$RUNTIME_DIR/runtime.json" ]]; then
   [[ ! -s "$RUNTIME_DIR/runtime.json" ]] || { echo 'Aktualisierung abgebrochen: der Server meldet sich nach dem Stop nicht ab. Daten und alte Programmdateien bleiben erhalten.' >&2; exit 1; }
 fi
 
-mkdir -p "$APP_DIR/core" "$APP_DIR/web/geodata" "$BIN_DIR" "$APP_MENU" "$ICON_DIR" "$LOG_DIR"
+# Copy the complete application tree, not just the original MVP files.
+# New server modules and nested HUD assets are runtime dependencies.
+mkdir -p "$APP_DIR" "$BIN_DIR" "$APP_MENU" "$ICON_DIR" "$LOG_DIR"
 chmod 700 "$LOG_DIR"
-install -m 644 "$ROOT/core/server.py" "$APP_DIR/core/server.py"
-install -m 644 "$ROOT/core/__init__.py" "$APP_DIR/core/__init__.py"
-install -m 644 "$ROOT/web/index.html" "$ROOT/web/styles.css" "$ROOT/web/app.js" "$APP_DIR/web/"
-install -m 644 "$ROOT/web/geodata/world.geojson" "$APP_DIR/web/geodata/world.geojson"
+cp -a "$ROOT/core" "$APP_DIR/"
+cp -a "$ROOT/web" "$APP_DIR/"
 install -m 644 "$ROOT/packaging/icons/kor-workstation.svg" "$ICON_DIR/kor-workstation.svg"
 
 # Build a launcher with shell-safe, literal paths (including spaces).

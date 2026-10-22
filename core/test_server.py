@@ -20,7 +20,7 @@ class CoreApiTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         base=Path(self.tmp.name)
-        app.DATA_HOME=base/'data';app.DB_PATH=app.DATA_HOME/'kor-workstation.sqlite3';app.BACKUP_DIR=app.DATA_HOME/'backups';app.GEODATA_DIR=app.DATA_HOME/'geodata';app.GERMANY_STATES_FILE=app.GEODATA_DIR/'germany-states.geojson'
+        app.DATA_HOME=base/'data';app.DB_PATH=app.DATA_HOME/'kor-workstation.sqlite3';app.BACKUP_DIR=app.DATA_HOME/'backups';app.GEODATA_DIR=app.DATA_HOME/'geodata';app.GERMANY_STATES_FILE=app.GEODATA_DIR/'germany-states.geojson';app.UPLOAD_DIR=app.DATA_HOME/'archive_attachments'
         app._last_backup_monotonic=0
         app.initialize()
         self.server=ThreadingHTTPServer(('127.0.0.1',0),app.AppHandler);self.server.daemon_threads=True
@@ -471,5 +471,32 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(caught.exception.code,403)
         status,_=self.req('/api/tasks','POST',{'title':'blocked'},headers={'Origin':'http://127.0.0.1:1'})
         self.assertEqual(status,403)
+
+    def test_new_system_health_mesh_logs_and_simulation_endpoints(self):
+        status, health = self.req('/api/system/health')
+        self.assertEqual(status, 200)
+        self.assertIn('ram_used_pct', health)
+        self.assertIn('storage_free_gb', health)
+        status, mesh_status = self.req('/api/mesh/status')
+        self.assertEqual(status, 200)
+        self.assertFalse(mesh_status['enabled'])
+        self.assertEqual(mesh_status['connected_peers'], [])
+        status, logs = self.req('/api/console/logs')
+        self.assertEqual(status, 200)
+        self.assertIn('logs', logs)
+        status, simulation = self.req('/api/simulation/resource-runway?days=5&daily_burn_rate=3&current_stock=10')
+        self.assertEqual(status, 200)
+        self.assertEqual([x['remaining_stock'] for x in simulation['timeline']], [7.0, 4.0, 1.0, 0.0])
+        self.assertEqual(self.req('/api/simulation/resource-runway?days=-1')[0], 400)
+
+    def test_local_archive_upload_is_sanitized_and_bounded(self):
+        import base64
+        payload=base64.b64encode(b'KOR test attachment').decode('ascii')
+        status, result=self.req('/api/archive/upload','POST',{'filename':'../report.txt','content_base64':payload})
+        self.assertEqual(status,201)
+        self.assertEqual(result['filename'],'report.txt')
+        target=app.UPLOAD_DIR/result['stored_name']
+        self.assertEqual(target.read_bytes(),b'KOR test attachment')
+        self.assertEqual(target.stat().st_mode & 0o777,0o600)
 
 if __name__=='__main__':unittest.main()
