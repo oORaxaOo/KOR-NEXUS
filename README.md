@@ -177,3 +177,10 @@ Siehe `LICENSE`.
 `.github/workflows/release.yml` definiert getrennte Jobs: plattformunabhängige Prüfungen und einen nativen Paketbau in einem Arch-Linux-Container. Der Arch-Job installiert seine Build-Werkzeuge nur innerhalb des kurzlebigen CI-Containers, erstellt einen unprivilegierten Build-Benutzer, regeneriert das deterministische Quellarchiv und ruft `makepkg` ohne Installationsoption auf. Paketmetadaten, Dateiliste und Paketarchiv werden geprüft und als CI-Artefakt bereitgestellt. Nach dem Paketbau wird das Paket innerhalb desselben kurzlebigen Arch-CI-Containers installiert, gestartet, geprüft und wieder entfernt. Dieser Test ist ausdrücklich keine Installation auf dem persönlichen Zielsystem.
 
 Lokale Diagnose: `command -v makepkg`, `command -v pacman`, `command -v docker` und `command -v podman`. Auf einer Debian-Umgebung ohne diese Werkzeuge ist ein echter Arch-Paketbau nicht möglich; die CI-Konfiguration ersetzt keinen tatsächlich ausgeführten CI-Lauf.
+
+
+## Media Hub: YouTube, Radio und Offline-Videos
+
+Der Media Hub ergänzt die Workstation um einen eingebetteten YouTube-Player, einen Internet-Radio-Player mit lokal gemerkten Stream-Adressen und eine lokale Videobibliothek. Die Bibliothek speichert vom Nutzer ausgewählte Videodateien im IndexedDB-Speicher des lokalen App-Profils; sie kann deshalb auch ohne Internet genutzt werden, solange der Browser-Speicher erhalten bleibt. Die Speicherkapazität hängt vom System und der Browser-Quota ab. Für größere Archive empfiehlt sich weiterhin ein normaler Ordner auf der Festplatte.
+
+Der YouTube-Mini-Player kann als schwebendes Fenster innerhalb der Workstation über anderen Modulen stehen bleiben. Einbettung kann durch YouTube-Einstellungen, Anmeldung oder Alters-/Regionsbeschränkungen verhindert werden; in diesem Fall lässt sich das Video extern öffnen. YouTube-Videos werden nicht heruntergeladen oder inoffiziell offline kopiert. Internet-Radio benötigt eine gültige direkte HTTP(S)-Stream-URL; nicht jeder Sender erlaubt browserbasiertes Streaming.

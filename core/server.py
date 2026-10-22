@@ -678,7 +678,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def log_message(self,fmt,*args):
         if os.environ.get('KOR_DEBUG')=='1': super().log_message(fmt,*args)
     def _headers(self,status,ctype='application/json; charset=utf-8',length=None):
-        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.send_header('Cache-Control','no-store');self.send_header('Cross-Origin-Resource-Policy','same-origin');self.send_header('Content-Security-Policy',"default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'")
+        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.send_header('Cache-Control','no-store');self.send_header('Cross-Origin-Resource-Policy','same-origin');self.send_header('Content-Security-Policy',"default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com; media-src 'self' blob: data: https:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'")
         if length is not None:self.send_header('Content-Length',str(length))
         self.end_headers()
     def send_json(self,obj,status=200):
