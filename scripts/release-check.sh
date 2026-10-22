@@ -57,7 +57,7 @@ v=sys.argv[1]; p=Path(f'kor-workstation-{v}.tar.gz')
 with tarfile.open(p,'r:gz') as t:
  members=t.getmembers()
  names={m.name.removeprefix('./') for m in members}
- required={'PKGBUILD','core/server.py','core/test_server.py','core/github_integration.py','tests/test_github_integration.py','web/github.html','web/code.html','web/js/github-center.js','GITHUB_CENTER.md','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/test-built-package-installation.sh'}
+ required={'PKGBUILD','core/server.py','core/test_server.py','core/github_integration.py','tests/test_github_integration.py','tests/test_code_workbench.py','web/github.html','web/code.html','web/js/github-center.js','GITHUB_CENTER.md','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/test-built-package-installation.sh'}
  missing=required-names
  if missing: raise SystemExit(f'FEHLER: Quellarchiv-Dateien fehlen: {sorted(missing)}')
  if any(m.mtime != 0 for m in members): raise SystemExit('FEHLER: Quellarchiv-Zeitstempel nicht deterministisch')
