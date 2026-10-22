@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     from core import mesh
     from core.simulation import simulate_resource_runway
 
-from core.media import check_emergency_readiness, media_path, media_mime, init_media_db
+from core.media import check_emergency_readiness, media_path, media_mime, init_media_db, set_media_favorite
 
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
@@ -840,6 +840,18 @@ class AppHandler(BaseHTTPRequestHandler):
         except ValueError as e:return self.fail(400,str(e))
         if path!='/api/import/preview': maybe_backup()
         now=utcnow()
+        if path == '/api/media/favorite':
+            try:
+                file_id=int(data.get('id'))
+                favorite=data.get('favorite')
+                if file_id < 1 or not isinstance(favorite,bool): raise ValueError()
+            except (TypeError,ValueError):
+                return self.fail(400,'Ungültige Medien-ID oder Favoritenangabe.')
+            try:
+                if not set_media_favorite(file_id,favorite): return self.fail(404,'Medium nicht gefunden.')
+                return self.send_json({'ok':True,'id':file_id,'is_favorite':favorite})
+            except sqlite3.Error:
+                return self.fail(500,'Favorit konnte nicht gespeichert werden.')
         if path=='/api/archive/upload':
             import base64, binascii
             filename=os.path.basename(str(data.get('filename','')).replace(chr(92),'/')).strip()
