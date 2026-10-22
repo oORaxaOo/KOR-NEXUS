@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0f"><title>KOR-NEXUS // CODE WORKBENCH</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+.code-shell{max-width:1120px;margin:0 auto;padding:28px 24px 60px}.code-top{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:24px}.code-top h1{font-size:clamp(24px,4vw,38px);margin:5px 0}.code-top p{color:var(--muted);max-width:720px}.code-panel{background:var(--panel);border:1px solid var(--line);padding:22px;margin:18px 0}.code-panel h2{font:700 13px var(--mono);letter-spacing:1px}.code-status{display:flex;align-items:center;gap:10px;color:var(--muted);font:11px var(--mono);margin:12px 0}.led{width:8px;height:8px;border-radius:50%;background:var(--gold)}.led.ok{background:var(--green)}.workspace-list{display:grid;gap:8px;margin:16px 0}.workspace-item{display:flex;align-items:center;gap:12px;border:1px solid var(--line);padding:12px;background:#111416}.workspace-item input{accent-color:var(--red)}.workspace-info{min-width:0;flex:1}.workspace-name{font-weight:700;overflow-wrap:anywhere}.workspace-path{font:11px var(--mono);color:var(--muted);overflow-wrap:anywhere}.workspace-tag{font:10px var(--mono);color:var(--gold);white-space:nowrap}.code-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.code-note{border-left:2px solid var(--gold);padding:12px 14px;background:#c9a76a0b;color:#c2c8c7;font-size:12px}.code-error{color:#ff9292}.code-success{color:var(--green)}.code-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.code-step{padding:14px;background:var(--panel2);border:1px solid var(--line)}.code-step b{display:block;color:var(--red);font:11px var(--mono);margin-bottom:8px}.code-step p{color:var(--muted);font-size:12px;margin:0}.code-footer{font:10px var(--mono);color:var(--muted);margin-top:20px}@media(max-width:650px){.code-shell{padding:18px 14px}.code-panel{padding:16px}.workspace-item{align-items:flex-start}.workspace-tag{display:none}}
+</style>
+</head>
+<body>
+<header class="topbar">
+ <div class="brand"><div class="brand-mark"><span>K</span></div><div><div class="brand-title">KOR <b>WORKSTATION</b></div><div class="brand-sub">COMMAND NEXUS <span>///</span> CODE WORKBENCH</div></div></div>
+ <div class="top-actions"><a class="btn ghost small" href="./index.html">← KOMMANDOZENTRALE</a><a class="btn ghost small" href="./github.html">⌘ GITHUB</a></div>
+</header>
+<main class="code-shell">
+ <div class="code-top"><div><div class="eyebrow"><i>//</i> DEVELOPMENT SYSTEM / 01</div><h1>CODE WORKBENCH<span style="color:var(--red)">.</span></h1><p>Eine vollständige lokale VS-Code-ähnliche Entwicklungsumgebung für KOR-NEXUS und deine Spielprojekte. Der Editor läuft als eigener lokaler Dienst; KOR-NEXUS selbst bleibt davon unabhängig nutzbar.</p></div></div>
+ <section class="code-panel">
+  <div class="panel-head"><div><div class="kicker">01 / RUNTIME CHECK</div><h2>IDE-STATUS</h2></div><span class="region-label" id="runtimeBadge">PRÜFE SYSTEM …</span></div>
+  <div class="code-status"><span class="led" id="runtimeLed"></span><span id="runtimeText">Lokale IDE wird gesucht …</span></div>
+  <p class="subtle-note" id="runtimeHelp">Die IDE wird nur auf ausdrücklichen Klick gestartet und bindet ausschließlich an 127.0.0.1.</p>
+  <div id="installGuide" class="code-note" hidden><b>code-server fehlt.</b><br>Installiere auf Arch Linux ein vertrauenswürdiges code-server-Paket (z. B. aus dem AUR), prüfe den Paket-Maintainer und starte KOR-NEXUS danach neu. KOR-NEXUS installiert keine zusätzlichen Programme automatisch.</div>
+ </section>
+ <section class="code-panel">
+  <div class="panel-head"><div><div class="kicker">02 / PROJECT SELECTOR</div><h2>ARBEITSORDNER</h2></div><button id="reloadWorkspaces" class="btn ghost small">↻ AKTUALISIEREN</button></div>
+  <p class="subtle-note">Wähle ein lokal vorhandenes Repository oder Projekt. Sichtbar sind nur Projektordner innerhalb der freigegebenen Workspace-Wurzeln. Das Bearbeiten von Dateien geschieht anschließend in code-server.</p>
+  <div id="workspaceList" class="workspace-list"><div class="empty">Projektordner werden gesucht …</div></div>
+  <div id="workspaceMessage" role="status" aria-live="polite" class="subtle-note"></div>
+  <div class="code-actions"><button id="launchIde" class="btn" disabled>⌘ IDE MIT PROJEKT ÖFFNEN</button><a id="openIde" class="btn ghost" href="#" target="_blank" rel="noopener noreferrer" hidden>IDE ÖFFNEN ↗</a></div>
+ </section>
+ <section class="code-panel">
+  <div class="kicker">03 / WORKFLOW</div><h2>ENTWICKLUNGSABLAUF</h2>
+  <div class="code-steps">
+   <div class="code-step"><b>01 — EDIT</b><p>Code, Konfigurationsdateien und Dokumentation im vollständigen Editor bearbeiten. Terminal und Erweiterungen stellt code-server bereit.</p></div>
+   <div class="code-step"><b>02 — VERIFY</b><p>Tests und Build-Kommandos im integrierten Terminal ausführen. Fehlermeldungen prüfen, bevor Änderungen übernommen werden.</p></div>
+   <div class="code-step"><b>03 — REVIEW</b><p>Git-Änderungen kontrollieren. KOR-NEXUS führt weder automatisch Commits noch Pushes oder Merges aus.</p></div>
+  </div>
+  <p class="code-note" style="margin-top:16px">Sicherheit: Der IDE-Dienst ist nur an die lokale Loopback-Adresse gebunden. Verwende keine öffentlich erreichbare Bind-Adresse. Zugangstokens gehören in sichere lokale Anmeldedaten und niemals in Quellcode oder Commits.</p>
+ </section>
+ <div class="code-footer">KOR-NEXUS / LOCAL-FIRST DEVELOPMENT / NO AUTO-COMMIT · NO AUTO-PUSH · NO AUTO-MERGE</div>
+</main>
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+let workspaces=[],selectedPath='',ideUrl='';
+async function api(path,options={}){const r=await fetch('/api'+path,{...options,headers:{Accept:'application/json',...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});let d;try{d=await r.json()}catch{throw new Error('Serverantwort nicht lesbar ('+r.status+')')}if(!r.ok)throw new Error(d.error||'Fehler '+r.status);return d}
+function message(text,error=false){const el=$('#workspaceMessage');el.textContent=text;el.className=error?'subtle-note code-error':'subtle-note code-success'}
+function renderWorkspaces(){const host=$('#workspaceList');host.replaceChildren();if(!workspaces.length){host.innerHTML='<div class="empty">Keine Projektordner in den freigegebenen Workspace-Wurzeln gefunden.</div>';return}for(const w of workspaces){const label=document.createElement('label');label.className='workspace-item';const radio=document.createElement('input');radio.type='radio';radio.name='workspace';radio.value=w.path;radio.checked=w.path===selectedPath;radio.addEventListener('change',()=>{selectedPath=w.path;$('#launchIde').disabled=!$('#runtimeLed').classList.contains('ok')});const info=document.createElement('span');info.className='workspace-info';const name=document.createElement('span');name.className='workspace-name';name.textContent=w.name;const path=document.createElement('span');path.className='workspace-path';path.textContent=w.path;info.append(name,path);const tag=document.createElement('span');tag.className='workspace-tag';tag.textContent=w.git?'GIT REPOSITORY':'PROJECT';label.append(radio,info,tag);host.append(label)}}
+async function load(){ $('#runtimeText').textContent='Prüfe lokale IDE …';$('#launchIde').disabled=true;try{const d=await api('/ide/status');workspaces=d.workspaces||[];ideUrl=d.url||'';const available=!!d.available;$('#runtimeLed').classList.toggle('ok',available);$('#runtimeBadge').textContent=available?'CODE-SERVER VERFÜGBAR':'INSTALLATION ERFORDERLICH';$('#runtimeText').textContent=available?(d.running?'Lokale IDE läuft bereits.':'code-server ist installiert und startbereit.'):'code-server wurde nicht gefunden.';$('#runtimeHelp').textContent=d.running?'Laufende IDE: '+d.url:'Die IDE wird auf Klick gestartet und nur an 127.0.0.1 gebunden.';$('#installGuide').hidden=available;$('#launchIde').disabled=!available||!workspaces.length;if(d.running){$('#openIde').href=d.url;$('#openIde').hidden=false}else $('#openIde').hidden=true;if(!selectedPath&&workspaces.length)selectedPath=workspaces.find(w=>w.git)?.path||workspaces[0].path;renderWorkspaces();if(!available)message(d.install_hint||'Bitte code-server installieren.',true)}catch(e){$('#runtimeText').textContent='KOR-NEXUS API nicht erreichbar.';message(e.message,true)}}
+$('#reloadWorkspaces').addEventListener('click',()=>{message('');load()});
+$('#launchIde').addEventListener('click',async()=>{if(!selectedPath)return;$('#launchIde').disabled=true;message('Starte IDE für '+selectedPath+' …');try{const d=await api('/ide/start',{method:'POST',body:JSON.stringify({workspace:selectedPath})});ideUrl=d.url;$('#openIde').href=ideUrl;$('#openIde').hidden=false;message('IDE gestartet. Sie öffnet sich in einem separaten lokalen Browser-Tab.');window.open(ideUrl,'_blank','noopener,noreferrer');$('#runtimeLed').classList.add('ok');$('#runtimeBadge').textContent='IDE GESTARTET';$('#runtimeText').textContent='Lokaler code-server-Prozess wurde gestartet.'}catch(e){message(e.message,true)}finally{$('#launchIde').disabled=false}});
+load();
+</script>
+</body>
+</html>
