@@ -61,6 +61,8 @@ jobs:
               names = {member.name.removeprefix('./') for member in members}
           required = {
               'PKGBUILD', 'core/server.py', 'core/test_server.py',
+              'core/github_integration.py', 'tests/test_github_integration.py',
+              'web/github.html', 'web/js/github-center.js', 'GITHUB_CENTER.md',
               'web/geodata/world.geojson', 'scripts/ci.sh',
               'scripts/release-check.sh', 'scripts/test-installation.sh',
               '.github/workflows/release.yml',
