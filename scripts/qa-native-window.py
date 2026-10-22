@@ -16,10 +16,10 @@ from PyQt6.QtCore import QPoint, QTimer, Qt, QUrl
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-from core.window import KorNexusWindow
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from core.window import KorNexusWindow
+
 WEB = ROOT / "web"
 
 
