@@ -704,7 +704,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.trusted(): return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
-        if path.startswith('/api/'): add_system_log('API','GET',path)
+        if path.startswith('/api/'): add_system_log('GET','API',path)
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if path.startswith('/api/'):
             maybe_backup()
@@ -777,7 +777,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.trusted():return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
-        if path.startswith('/api/'): add_system_log('API','POST',path)
+        if path.startswith('/api/'): add_system_log('POST','API',path)
         if path=='/api/mesh/start':
             mesh.start(); return self.send_json({'ok':True,'mesh':mesh.status()})
         if path=='/api/mesh/stop':
