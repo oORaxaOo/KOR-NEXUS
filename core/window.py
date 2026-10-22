@@ -1,4 +1,4 @@
-"""Native PyQt6 shell for the KOR-NEXUS local web UI."""
+"""Native PyQt6 desktop shell for KOR-NEXUS and its internal tool windows."""
 from __future__ import annotations
 
 import os
@@ -13,11 +13,36 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 
 class KorNexusPage(QWebEnginePage):
+    """Keep web popups inside native Qt windows instead of an external browser."""
+
     def acceptNavigationRequest(self, url, navigation_type, is_main_frame):
-        if url.scheme() == 'kor-nexus' and url.host() == 'quit':
+        if url.scheme() == "kor-nexus" and url.host() == "quit":
             self.view().window().close()
             return False
         return super().acceptNavigationRequest(url, navigation_type, is_main_frame)
+
+    def createWindow(self, window_type):
+        host = self.view().window()
+        create_popup = getattr(host, "create_popup_page", None)
+        if callable(create_popup):
+            return create_popup()
+        return super().createWindow(window_type)
+
+
+class KorNexusPopupWindow(QMainWindow):
+    """A secondary native window for code-server and other intentional web popups."""
+
+    def __init__(self, root_window: "KorNexusWindow", profile: QWebEngineProfile) -> None:
+        super().__init__(root_window)
+        self.root_window = root_window
+        self.setWindowTitle("KOR-NEXUS // WORKBENCH")
+        self.resize(1280, 820)
+        self.view_widget = QWebEngineView(self)
+        self.view_widget.setPage(KorNexusPage(profile, self.view_widget))
+        self.setCentralWidget(self.view_widget)
+
+    def create_popup_page(self):
+        return self.root_window.create_popup_page()
 
 
 class KorNexusWindow(QMainWindow):
@@ -34,11 +59,25 @@ class KorNexusWindow(QMainWindow):
         profile = QWebEngineProfile.defaultProfile()
         profile.setPersistentStoragePath(str(self.profile_dir))
         profile.setCachePath(str(self.profile_dir / "cache"))
+        self._popup_windows: list[KorNexusPopupWindow] = []
         self.browser = QWebEngineView(self)
         self.browser.setPage(KorNexusPage(profile, self.browser))
         self.browser.setUrl(QUrl(url + ("&" if "?" in url else "?") + "native=1"))
         self.setCentralWidget(self.browser)
         self.showFullScreen()
+
+    def create_popup_page(self):
+        popup = KorNexusPopupWindow(self, self.browser.page().profile())
+        self._popup_windows.append(popup)
+        popup.destroyed.connect(lambda *_args, window=popup: self._forget_popup(window))
+        popup.show()
+        return popup.view_widget.page()
+
+    def _forget_popup(self, window) -> None:
+        try:
+            self._popup_windows.remove(window)
+        except ValueError:
+            pass
 
     def eventFilter(self, watched, event) -> bool:
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
@@ -61,7 +100,7 @@ class KorNexusWindow(QMainWindow):
         super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
-        # Notify the local core so its normal cleanup path can run.
+        # Closing the main window ends the local core; closing a popup does not.
         try:
             request = Request(
                 self.server_url + "/api/shutdown",
