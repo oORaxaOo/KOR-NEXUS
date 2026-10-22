@@ -403,3 +403,19 @@ body.kor-kiosk-active .main{padding:12px;max-width:none}
 body.kor-kiosk-active .workspace{width:100%;max-width:none}
 body.kor-kiosk-active .map-wrap{height:calc(100vh - 150px);min-height:65vh}
 @media(max-width:700px){.kor-hud-toolbar{align-items:flex-start;flex-direction:column}.kor-hud-toolbar>div:first-child{flex-wrap:wrap}.matrix-console-panel{height:140px;bottom:8px;right:8px;width:calc(100vw - 16px)}body.kor-big-screen-active .layout{display:block}}
+
+
+/* Live operational HUD overlay */
+.kor-hud-overlay{position:fixed;inset:0;z-index:9000;pointer-events:none;font-family:var(--mono,monospace)}
+.hud-status-bar{position:absolute;top:78px;right:18px;display:flex;align-items:center;gap:10px;max-width:min(75vw,900px);padding:8px 10px;background:rgba(10,12,13,.9);border:1px solid var(--gold,#c9a76a);box-shadow:0 4px 20px #0008;pointer-events:auto}
+#mesh-network-status{font-size:11px;letter-spacing:.04em;color:var(--gold,#c9a76a);overflow-wrap:anywhere}
+#mesh-network-status.mesh-connected{color:#69d391}
+#mesh-network-status.mesh-error{color:#e66d6d}
+#big-screen-trigger{white-space:nowrap;font-size:10px}
+.matrix-console-panel{display:none;position:absolute;right:18px;bottom:18px;width:min(450px,calc(100vw - 36px));height:180px;max-height:30vh;background:rgba(8,9,10,.9);border:1px solid var(--red,#d44445);box-shadow:0 0 18px #d4444526;flex-direction:column;pointer-events:auto}
+body.kor-big-screen-active .matrix-console-panel{display:flex}
+.console-header{background:var(--red,#d44445);color:#08090a;font-weight:800;font-size:10px;padding:4px 8px;letter-spacing:.08em}
+.console-stream{padding:8px;flex:1;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#050606;color:#bfc8c8;font-size:10px;line-height:1.45}
+.console-stream::-webkit-scrollbar{width:4px}.console-stream::-webkit-scrollbar-thumb{background:var(--red,#d44445)}
+body:not(.kor-big-screen-active) .hud-status-bar{opacity:.92}
+@media(max-width:700px){.hud-status-bar{top:72px;left:8px;right:8px;max-width:none;gap:6px;padding:6px}.matrix-console-panel{right:8px;bottom:8px;width:calc(100vw - 16px);height:150px}.console-stream{font-size:9px}}
