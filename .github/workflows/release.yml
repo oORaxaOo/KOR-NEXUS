@@ -62,7 +62,8 @@ jobs:
           required = {
               'PKGBUILD', 'core/server.py', 'core/test_server.py',
               'core/github_integration.py', 'tests/test_github_integration.py',
-              'web/github.html', 'web/js/github-center.js', 'GITHUB_CENTER.md',
+              'web/github.html', 'web/code.html', 'web/js/github-center.js', 'GITHUB_CENTER.md',
+              'tests/test_code_workbench.py',
               'web/geodata/world.geojson', 'scripts/ci.sh',
               'scripts/release-check.sh', 'scripts/test-installation.sh',
               '.github/workflows/release.yml',
