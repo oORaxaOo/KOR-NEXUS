@@ -101,6 +101,9 @@ class KorNexusWindow(QMainWindow):
         super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
+        # Close child tool windows too, so the main-window close always exits the app.
+        for popup in list(self._popup_windows):
+            popup.close()
         # Closing the main window ends the local core; closing a popup does not.
         try:
             request = Request(
