@@ -109,6 +109,9 @@ jobs:
       - name: Run browser UI smoke tests with a hard timeout
         run: timeout --signal=TERM --kill-after=10s 120s python scripts/qa-preview-playwright.py
 
+      - name: Verify Code Workbench opens its IDE window
+        run: timeout --signal=TERM --kill-after=10s 120s python scripts/qa-code-workbench-playwright.py
+
       - name: Run isolated user install/upgrade/stop/uninstall test
         run: timeout --signal=TERM --kill-after=10s 120s bash scripts/test-installation.sh
 
