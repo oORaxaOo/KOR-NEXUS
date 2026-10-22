@@ -39,7 +39,7 @@ def main() -> None:
                 status=200, content_type="application/json",
                 body=json.dumps({"url": origin + "/ide/"}),
             ))
-            page.route("**/ide/", lambda route: route.fulfill(
+            page.route("**/ide/**", lambda route: route.fulfill(
                 status=200, content_type="text/html",
                 body="<title>Mock code-server</title><main>IDE ready</main>",
             ))
@@ -50,6 +50,8 @@ def main() -> None:
                 page.locator("#launchIde").click()
             ide_tab = popup_info.value
             ide_tab.wait_for_url("**/ide/")
+            ide_tab.wait_for_load_state("domcontentloaded")
+            ide_tab.wait_for_function("document.title === 'Mock code-server'")
             assert "Mock code-server" in ide_tab.title(), "IDE window did not navigate to the returned URL"
             assert page.locator("#workspaceMessage").inner_text().startswith("IDE gestartet"), "UI did not report launch success"
             print("Code Workbench launch browser regression test passed.")
