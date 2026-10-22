@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=KOR-NEXUS
+Comment=Lokale Kor-Workstation für Wissen, Planung und Atlas
+Exec=launch.sh
+Icon=org.oORaxaOo.KorNexus
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true
