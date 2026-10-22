@@ -22,7 +22,6 @@ for expected in (
     "opt/kor-workstation/web/js/hud.js",
     "opt/kor-workstation/web/github.html",
     "opt/kor-workstation/web/js/github-center.js",
-    "usr/share/doc/kor-workstation/GITHUB_CENTER.md",
     "opt/kor-workstation/web/geodata/world.geojson",
     "usr/bin/kor-workstation",
     "usr/bin/kor-workstation-stop",
