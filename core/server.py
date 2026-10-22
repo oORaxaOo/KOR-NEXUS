@@ -1289,6 +1289,11 @@ class AppHandler(BaseHTTPRequestHandler):
         return self.fail(404,'Endpunkt nicht gefunden.')
 
 
+def native_window_enabled():
+    """The native desktop shell is the default; headless mode is reserved for tests."""
+    return os.environ.get('KOR_NO_BROWSER') != '1' and os.environ.get('KOR_NATIVE_WINDOW', 'auto') != '0'
+
+
 def active_instance(url):
     try:
         with urllib.request.urlopen(url.rstrip('/')+'/api/health',timeout=1.2) as response:
@@ -1372,7 +1377,7 @@ def main():
     except Exception as exc: add_system_log('WARN','MESH','Netzwerkerkennung konnte nicht starten: '+str(exc))
     native_started=False
     native_error=False
-    headless_mode=(os.environ.get('KOR_NO_BROWSER')=='1' or os.environ.get('KOR_NATIVE_WINDOW')=='0')
+    headless_mode=not native_window_enabled()
     if not headless_mode:
         try:
             from core.window import start_native_app
