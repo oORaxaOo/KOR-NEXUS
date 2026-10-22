@@ -894,7 +894,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if not executable:
                 return self.send_json({'ok': False, 'error': 'code-server ist nicht installiert. Installiere es lokal und starte KOR-NEXUS erneut.'}, status=503)
             try:
-                workspace = Path(requested).expanduser().resolve(strict=True)
+                requested_path = Path(requested).expanduser()
+                if requested_path.is_symlink():
+                    return self.fail(400, 'Symbolische Links dürfen nicht als Arbeitsordner verwendet werden.')
+                workspace = requested_path.resolve(strict=True)
                 allowed = any(workspace == root or root in workspace.parents for root in _ide_workspace_roots())
                 if not allowed or not workspace.is_dir() or workspace.is_symlink():
                     return self.fail(400, 'Arbeitsordner liegt außerhalb der freigegebenen Workspace-Wurzeln.')
