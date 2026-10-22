@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import importlib.util, unittest
+import importlib.util, sys, unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.simulation import simulate_resource_runway
 class AdvancedFeatureTests(unittest.TestCase):
     def test_runway(self):
