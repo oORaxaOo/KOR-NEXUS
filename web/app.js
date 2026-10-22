@@ -41,7 +41,7 @@ async function activate(id,refresh=true){
  active=id;const m=modules[id],label=lang==='de'?m.label:m.labelEn,title=lang==='de'?m.title:m.titleEn,sub=lang==='de'?m.sub:m.subEn;
  $$('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.module===id));
  $('#crumb').textContent='/ '+label;$('#pageTitle').innerHTML=esc(label)+'<span class="period">.</span>';$('#pageSubtitle').textContent=sub;
- $('#atlasView').hidden=id!=='atlas';$('#moduleView').hidden=id==='atlas'||id==='news'||id==='operations'||id==='media';$('#newsView').hidden=id!=='news';$('#operationsView').hidden=id!=='operations';$('#workbenchView').hidden=id!=='workbench';$('#mediaView').hidden=id!=='media';
+ $('#atlasView').hidden=id!=='atlas';$('#moduleView').hidden=id==='atlas'||id==='news'||id==='operations'||id==='media';$('#newsView').hidden=id!=='news';$('#operationsView').hidden=id!=='operations';$('#workbenchView').hidden=id!=='workbench';$('#mediaView').hidden=id!=='media'&&!document.body.classList.contains('media-floating');
  const generic=$('#moduleView').querySelector('.module-list');generic.hidden=id==='workbench';
  if(id!=='atlas'&&id!=='news'&&id!=='operations'&&id!=='workbench'&&id!=='media'){
   $('#moduleTitle').textContent=title;const n=['atlas','projects','archive','simulation','database'].indexOf(id)+1;
