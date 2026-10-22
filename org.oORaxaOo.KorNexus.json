@@ -1,0 +1,29 @@
+{
+  "app-id": "org.oORaxaOo.KorNexus",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "launch.sh",
+  "finish-args": [
+    "--share=network",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--talk-name=org.freedesktop.portal.Desktop",
+    "--filesystem=xdg-data/kor-workstation:create",
+    "--filesystem=xdg-state/kor-workstation:create"
+  ],
+  "modules": [
+    {
+      "name": "kor-nexus",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -d /app/share/kor-nexus /app/bin /app/share/applications /app/share/icons/hicolor/scalable/apps",
+        "cp -r core web /app/share/kor-nexus/",
+        "install -Dm755 flatpak/launch.sh /app/bin/launch.sh",
+        "install -Dm644 flatpak/org.oORaxaOo.KorNexus.desktop /app/share/applications/org.oORaxaOo.KorNexus.desktop",
+        "install -Dm644 packaging/icons/kor-workstation.svg /app/share/icons/hicolor/scalable/apps/org.oORaxaOo.KorNexus.svg"
+      ],
+      "sources": [{"type": "dir", "path": "."}]
+    }
+  ]
+}
