@@ -849,6 +849,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 if path=='/api/github/issues':
                     result=github_integration.create_issue(owner,repo,data.get('title',''),data.get('body',''))
                     return self.send_json({'ok':True,**result},status=201)
+                if path=='/api/github/pulls':
+                    result=github_integration.create_pull_request(owner,repo,data.get('title',''),data.get('head',''),data.get('base',''),data.get('body',''))
+                    return self.send_json({'ok':True,**result},status=201)
                 if path=='/api/github/branches':
                     result=github_integration.create_branch(owner,repo,data.get('branch',''),data.get('source',''))
                     return self.send_json({'ok':True,**result},status=201)
