@@ -5,6 +5,8 @@ import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shut
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from core import mesh
+from core.simulation import simulate_resource_runway
 
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
@@ -18,6 +20,9 @@ GERMANY_STATES_FILE = GEODATA_DIR / 'germany-states.geojson'
 MAX_BODY = 12 * 1024 * 1024
 BACKUP_KEEP = 12
 BACKUP_INTERVAL = 30 * 60
+UPLOAD_DIR = DATA_HOME / 'archive_attachments'
+_system_logs = []
+_system_logs_lock = threading.Lock()
 FEEDS = [
   {'key':'tagesschau','name':'tagesschau.de','url':'https://www.tagesschau.de/index~rss2.xml'},
   {'key':'deutschlandfunk','name':'Deutschlandfunk','url':'https://www.deutschlandfunk.de/nachrichten-100.rss'},
@@ -32,6 +37,32 @@ _instance_lock_fd = None
 
 
 def utcnow(): return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+
+def add_system_log(level, component, message):
+    entry={'time':time.strftime('%H:%M:%S'),'level':str(level)[:20],'component':str(component)[:40],'message':str(message)[:300]}
+    with _system_logs_lock:
+        _system_logs.append(entry)
+        del _system_logs[:-50]
+
+def get_system_health():
+    result={'cpu_load_1min':None,'ram_used_pct':None,'storage_free_gb':None,'platform':sys.platform}
+    try:
+        with open('/proc/loadavg',encoding='ascii') as stream: result['cpu_load_1min']=float(stream.read().split()[0])
+    except (OSError,ValueError,IndexError): pass
+    try:
+        memory={}
+        with open('/proc/meminfo',encoding='ascii') as stream:
+            for line in stream:
+                key,sep,value=line.partition(':')
+                if sep: memory[key]=int(value.split()[0])
+        total=memory.get('MemTotal'); available=memory.get('MemAvailable')
+        if total and available is not None: result['ram_used_pct']=round((total-available)/total*100,1)
+    except (OSError,ValueError,IndexError): pass
+    try:
+        stat=os.statvfs(str(DATA_HOME))
+        result['storage_free_gb']=round(stat.f_bavail*stat.f_frsize/(1024**3),1)
+    except OSError: pass
+    return result
 
 def geojson_wgs84_coordinates_valid(value):
     """Validate nested GeoJSON coordinate arrays as WGS84 lon/lat pairs."""
@@ -87,6 +118,7 @@ def initialize():
           CREATE TABLE IF NOT EXISTS map_locations(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL CHECK(length(title)<=180),kind TEXT NOT NULL DEFAULT 'Projekt',region TEXT NOT NULL DEFAULT '',latitude REAL NOT NULL CHECK(latitude BETWEEN -90 AND 90),longitude REAL NOT NULL CHECK(longitude BETWEEN -180 AND 180),project_id INTEGER REFERENCES records(id) ON DELETE SET NULL,notes TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'geplant',progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100),task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,unit_id INTEGER REFERENCES units(id) ON DELETE SET NULL,resource_id INTEGER REFERENCES resources(id) ON DELETE SET NULL);
           CREATE INDEX IF NOT EXISTS idx_map_locations_region ON map_locations(region);
           CREATE TABLE IF NOT EXISTS geodata_assets(key TEXT PRIMARY KEY, geojson TEXT NOT NULL, updated_at TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS geodata_features(id INTEGER PRIMARY KEY AUTOINCREMENT,feature_type TEXT NOT NULL DEFAULT 'bundesland',name TEXT NOT NULL UNIQUE,ags TEXT,geometry_json TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS feed_items(id TEXT PRIMARY KEY,source_key TEXT NOT NULL,source_name TEXT NOT NULL,title TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',url TEXT NOT NULL,published TEXT NOT NULL DEFAULT '',fetched_at TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS idx_feed_published ON feed_items(published DESC);
           CREATE TABLE IF NOT EXISTS feed_status(source_key TEXT PRIMARY KEY,source_name TEXT NOT NULL,last_attempt TEXT,last_success TEXT,status TEXT NOT NULL DEFAULT 'Noch nicht abgerufen',item_count INTEGER NOT NULL DEFAULT 0);
@@ -666,10 +698,25 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.trusted(): return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
+        if path.startswith('/api/'): add_system_log('API','GET',path)
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if path.startswith('/api/'):
             maybe_backup()
-            if path=='/api/health': return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'database':'SQLite','data_dir':str(DATA_HOME),'backup_count':len(list(BACKUP_DIR.glob('kor-*.sqlite3'))),'python':sys.version.split()[0]})
+            if path=='/api/health': return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'database':'SQLite','data_dir':str(DATA_HOME),'backup_count':len(list(BACKUP_DIR.glob('kor-*.sqlite3'))),'python':sys.version.split()[0],'system':get_system_health()})
+            if path=='/api/system/health': return self.send_json(get_system_health())
+            if path=='/api/mesh/status': return self.send_json(mesh.status())
+            if path=='/api/console/logs':
+                with _system_logs_lock: local=list(_system_logs)
+                return self.send_json({'logs':(local+mesh.logs())[-50:]})
+            if path=='/api/geodata/features':
+                with db_connect() as con: rows=[dict(r) for r in con.execute('SELECT id,feature_type,name,ags,geometry_json FROM geodata_features ORDER BY name')]
+                for row in rows: row['geometry']=json.loads(row.pop('geometry_json'))
+                return self.send_json({'items':rows,'count':len(rows)})
+            if path=='/api/simulation/resource-runway':
+                try:
+                    days=int(q.get('days',['30'])[0]); burn=float(q.get('daily_burn_rate',['0'])[0]); stock=float(q.get('current_stock',['0'])[0])
+                    return self.send_json({'timeline':simulate_resource_runway(days,burn,stock)})
+                except (ValueError,TypeError) as exc: return self.fail(400,'Ungültige Simulationsparameter: '+str(exc))
             if path=='/api/tasks':
                 with db_connect() as con:return self.send_json({'items':[task_dict(r) for r in con.execute('SELECT * FROM tasks ORDER BY done ASC,id DESC')]})
             if path=='/api/records':
@@ -724,6 +771,11 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.trusted():return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
+        if path.startswith('/api/'): add_system_log('API','POST',path)
+        if path=='/api/mesh/start':
+            mesh.start(); return self.send_json({'ok':True,'mesh':mesh.status()})
+        if path=='/api/mesh/stop':
+            mesh.stop(); return self.send_json({'ok':True,'mesh':mesh.status()})
         if path=='/api/shutdown':
             self.send_json({'ok':True,'message':'KOR-NEXUS beendet.'})
             event=getattr(self.server,'shutdown_event',None)
@@ -733,6 +785,23 @@ class AppHandler(BaseHTTPRequestHandler):
         except ValueError as e:return self.fail(400,str(e))
         if path!='/api/import/preview': maybe_backup()
         now=utcnow()
+        if path=='/api/archive/upload':
+            import base64, binascii
+            filename=os.path.basename(str(data.get('filename','')).replace(chr(92),'/')).strip()
+            encoded=data.get('content_base64')
+            if not filename or filename in ('.','..') or len(filename)>180 or any(ord(ch)<32 for ch in filename): return self.fail(400,'Ungültiger Dateiname.')
+            if not isinstance(encoded,str) or len(encoded)>16*1024*1024: return self.fail(400,'Datei fehlt oder ist zu groß (max. 12 MiB).')
+            try: payload=base64.b64decode(encoded,validate=True)
+            except (ValueError,binascii.Error): return self.fail(400,'Dateiinhalt ist kein gültiges Base64.')
+            if not payload or len(payload)>12*1024*1024: return self.fail(400,'Datei muss zwischen 1 Byte und 12 MiB groß sein.')
+            UPLOAD_DIR.mkdir(parents=True,exist_ok=True,mode=0o700)
+            safe_name=re.sub(r'[^A-Za-z0-9._() -]','_',filename)[:140].strip(' .') or 'upload.bin'
+            target=UPLOAD_DIR/(uuid.uuid4().hex+'-'+safe_name)
+            target.write_bytes(payload)
+            try: os.chmod(target,0o600)
+            except OSError: pass
+            add_system_log('INFO','ARCHIV','Datei lokal abgelegt: '+safe_name)
+            return self.send_json({'ok':True,'filename':safe_name,'size':len(payload),'stored_name':target.name},201)
         if path=='/api/import/preview':
             return self.send_json(portable_import_preview(data.get('data')))
         if path=='/api/geodata/germany-states':
