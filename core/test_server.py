@@ -20,7 +20,7 @@ class CoreApiTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         base=Path(self.tmp.name)
-        app.DATA_HOME=base/'data';app.DB_PATH=app.DATA_HOME/'kor-workstation.sqlite3';app.BACKUP_DIR=app.DATA_HOME/'backups';app.GEODATA_DIR=app.DATA_HOME/'geodata';app.GERMANY_STATES_FILE=app.GEODATA_DIR/'germany-states.geojson'
+        app.DATA_HOME=base/'data';app.DB_PATH=app.DATA_HOME/'kor-workstation.sqlite3';app.BACKUP_DIR=app.DATA_HOME/'backups';app.GEODATA_DIR=app.DATA_HOME/'geodata';app.GERMANY_STATES_FILE=app.GEODATA_DIR/'germany-states.geojson';app.UPLOAD_DIR=app.DATA_HOME/'archive_attachments'
         app._last_backup_monotonic=0
         app.initialize()
         self.server=ThreadingHTTPServer(('127.0.0.1',0),app.AppHandler);self.server.daemon_threads=True
