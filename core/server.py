@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """KOR-NEXUS local-first core. Standard library only; loopback-bound."""
 from __future__ import annotations
-import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shutil, socket, sqlite3, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shutil, socket, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -43,6 +43,24 @@ _db_lock = threading.RLock()
 _backup_lock = threading.Lock()
 _last_backup_monotonic = 0.0
 _instance_lock_fd = None
+_ide_lock = threading.Lock()
+_ide_process = None
+_ide_port = None
+
+
+def _ide_workspace_roots():
+    """Return existing, canonical roots explicitly available to the local code IDE."""
+    configured = os.environ.get('KOR_WORKSPACE_ROOTS', '')
+    raw_roots = [part for part in configured.split(os.pathsep) if part.strip()] if configured else [str(ROOT.parent), str(Path.home() / 'Projects')]
+    roots = []
+    for raw in raw_roots:
+        try:
+            root = Path(raw).expanduser().resolve(strict=True)
+            if root.is_dir() and root not in roots:
+                roots.append(root)
+        except (OSError, RuntimeError):
+            continue
+    return roots
 
 
 def utcnow(): return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
@@ -709,6 +727,30 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('GET','API',path)
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if path == '/api/ide/status':
+            roots = _ide_workspace_roots()
+            workspaces = []
+            seen = set()
+            for root in roots:
+                candidates = [root]
+                try:
+                    candidates.extend(sorted((p for p in root.iterdir() if p.is_dir() and not p.name.startswith('.')), key=lambda p: p.name.lower()))
+                except OSError:
+                    pass
+                for candidate in candidates:
+                    try:
+                        resolved = candidate.resolve(strict=True)
+                        if resolved in seen or not resolved.is_dir():
+                            continue
+                        seen.add(resolved)
+                        is_repo = (resolved / '.git').exists()
+                        if candidate == root or is_repo or any((resolved / marker).exists() for marker in ('pyproject.toml','package.json','Cargo.toml','CMakeLists.txt','.sln')):
+                            workspaces.append({'name': resolved.name or str(resolved), 'path': str(resolved), 'git': is_repo})
+                    except OSError:
+                        continue
+            executable = shutil.which('code-server')
+            running = bool(_ide_process and _ide_process.poll() is None and _ide_port)
+            return self.send_json({'ok': True, 'available': bool(executable), 'running': running, 'url': f'http://127.0.0.1:{_ide_port}/' if running else None, 'workspaces': workspaces[:100], 'install_hint': 'Installiere code-server (Arch: z. B. über AUR) und starte KOR-NEXUS neu.' if not executable else None})
         if path == '/api/github/status':
             try:
                 info=github_integration.overview()
@@ -842,6 +884,45 @@ class AppHandler(BaseHTTPRequestHandler):
         if not self.trusted():return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('POST','API',path)
+        if path == '/api/ide/start':
+            try:
+                data = self.read_body()
+            except ValueError as exc:
+                return self.fail(400, str(exc))
+            requested = str(data.get('workspace', '')).strip()
+            executable = shutil.which('code-server')
+            if not executable:
+                return self.send_json({'ok': False, 'error': 'code-server ist nicht installiert. Installiere es lokal und starte KOR-NEXUS erneut.'}, status=503)
+            try:
+                workspace = Path(requested).expanduser().resolve(strict=True)
+                allowed = any(workspace == root or root in workspace.parents for root in _ide_workspace_roots())
+                if not allowed or not workspace.is_dir() or workspace.is_symlink():
+                    return self.fail(400, 'Arbeitsordner liegt außerhalb der freigegebenen Workspace-Wurzeln.')
+            except (OSError, RuntimeError, ValueError):
+                return self.fail(400, 'Arbeitsordner existiert nicht oder ist ungültig.')
+            global _ide_process, _ide_port
+            with _ide_lock:
+                if _ide_process and _ide_process.poll() is None and _ide_port:
+                    return self.send_json({'ok': True, 'url': f'http://127.0.0.1:{_ide_port}/', 'running': True, 'workspace': str(workspace)})
+                try:
+                    with socket.socket() as probe:
+                        probe.bind(('127.0.0.1', 0))
+                        port = probe.getsockname()[1]
+                    user_data = DATA_HOME / 'code-server'
+                    user_data.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    os.chmod(user_data, 0o700)
+                    _ide_process = subprocess.Popen(
+                        [executable, '--auth', 'none', '--bind-addr', f'127.0.0.1:{port}', '--disable-telemetry', '--user-data-dir', str(user_data), str(workspace)],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                    )
+                    _ide_port = port
+                    add_system_log('INFO', 'CODE IDE', 'Lokale Code-IDE gestartet.')
+                    return self.send_json({'ok': True, 'url': f'http://127.0.0.1:{port}/', 'running': True, 'workspace': str(workspace)}, status=202)
+                except (OSError, ValueError) as exc:
+                    _ide_process = None
+                    _ide_port = None
+                    add_system_log('ERROR', 'CODE IDE', 'Start fehlgeschlagen: ' + str(exc))
+                    return self.fail(503, 'Code-IDE konnte nicht gestartet werden.')
         if path.startswith('/api/github/'):
             try: data=self.read_body()
             except ValueError as exc: return self.fail(400,str(exc))
