@@ -15,6 +15,7 @@ except ModuleNotFoundError:
     from core.simulation import simulate_resource_runway
 
 from core.media import check_emergency_readiness, media_path, media_mime, init_media_db, set_media_favorite
+from core import github_integration
 
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
@@ -708,6 +709,19 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('GET','API',path)
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if path == '/api/github/status':
+            try:
+                info=github_integration.overview()
+                return self.send_json({'ok':True,'connected':True,'user':info['user'],'repository_count':len(info['repositories'])})
+            except github_integration.GitHubError as exc:
+                return self.send_json({'ok':False,'connected':False,'error':str(exc)})
+        if path == '/api/github/repositories':
+            try: return self.send_json({'ok':True,**github_integration.overview()})
+            except github_integration.GitHubError as exc: return self.send_json({'ok':False,'error':str(exc)},status=503)
+        if path == '/api/github/repository':
+            owner=q.get('owner',[''])[0]; repo=q.get('repo',[''])[0]
+            try: return self.send_json({'ok':True,**github_integration.repository_data(owner,repo)})
+            except github_integration.GitHubError as exc: return self.send_json({'ok':False,'error':str(exc)},status=400)
         if path == '/api/media/readiness':
             try:
                 init_media_db()
@@ -827,6 +841,23 @@ class AppHandler(BaseHTTPRequestHandler):
         if not self.trusted():return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('POST','API',path)
+        if path.startswith('/api/github/'):
+            try: data=self.read_body()
+            except ValueError as exc: return self.fail(400,str(exc))
+            try:
+                owner=str(data.get('owner','')); repo=str(data.get('repo',''))
+                if path=='/api/github/issues':
+                    result=github_integration.create_issue(owner,repo,data.get('title',''),data.get('body',''))
+                    return self.send_json({'ok':True,**result},status=201)
+                if path=='/api/github/branches':
+                    result=github_integration.create_branch(owner,repo,data.get('branch',''),data.get('source',''))
+                    return self.send_json({'ok':True,**result},status=201)
+                if path=='/api/github/workflow-dispatch':
+                    result=github_integration.dispatch_workflow(owner,repo,data.get('workflow',''),data.get('branch',''))
+                    return self.send_json({'ok':True,**result},status=202)
+                return self.fail(404,'Unbekannte GitHub-Aktion.')
+            except github_integration.GitHubError as exc:
+                return self.send_json({'ok':False,'error':str(exc)},status=400)
         if path=='/api/mesh/start':
             mesh.start(); return self.send_json({'ok':True,'mesh':mesh.status()})
         if path=='/api/mesh/stop':
