@@ -136,6 +136,17 @@ jobs:
         with:
           path: project
 
+      - name: Verify native Qt desktop shell is importable
+        working-directory: project
+        run: |
+          python - <<'PY'
+          from core.window import KorNexusPage, KorNexusPopupWindow, KorNexusWindow
+          assert callable(KorNexusPage.createWindow)
+          assert callable(KorNexusWindow.create_popup_page)
+          assert callable(KorNexusPopupWindow.create_popup_page)
+          print("Native Qt window shell and internal popup routing import successfully.")
+          PY
+
       - name: Build and verify package as an unprivileged user
         working-directory: project
         run: |
