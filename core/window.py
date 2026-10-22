@@ -8,12 +8,16 @@ from urllib.request import Request, urlopen
 
 from PyQt6.QtCore import QEvent, QUrl, Qt
 from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 
 class KorNexusPage(QWebEnginePage):
     """Keep web popups inside native Qt windows instead of an external browser."""
+
+    def __init__(self, profile: QWebEngineProfile, parent=None) -> None:
+        super().__init__(profile, parent)
+        self.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
 
     def acceptNavigationRequest(self, url, navigation_type, is_main_frame):
         if url.scheme() == "kor-nexus" and url.host() == "quit":
