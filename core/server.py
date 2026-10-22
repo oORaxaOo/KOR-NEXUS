@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """KOR-NEXUS local-first core. Standard library only; loopback-bound."""
 from __future__ import annotations
-import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shutil, socket, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shutil, signal, socket, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -61,6 +61,29 @@ def _ide_workspace_roots():
         except (OSError, RuntimeError):
             continue
     return roots
+
+
+def _stop_code_ide():
+    """Stop the IDE process group when the KOR-NEXUS server shuts down."""
+    global _ide_process, _ide_port
+    with _ide_lock:
+        process = _ide_process
+        _ide_process = None
+        _ide_port = None
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
 
 
 def utcnow(): return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
@@ -916,7 +939,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     os.chmod(user_data, 0o700)
                     _ide_process = subprocess.Popen(
                         [executable, '--auth', 'none', '--bind-addr', f'127.0.0.1:{port}', '--disable-telemetry', '--user-data-dir', str(user_data), str(workspace)],
-                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
                     )
                     _ide_port = port
                     ready = False
@@ -1390,6 +1413,7 @@ def main():
             while not server.shutdown_event.is_set():server.handle_request()
         except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')
     stop_backups.set()
+    _stop_code_ide()
     try: mesh.stop()
     except Exception: pass
     server.server_close()
