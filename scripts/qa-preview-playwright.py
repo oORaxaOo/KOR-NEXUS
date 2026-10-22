@@ -204,7 +204,7 @@ with sync_playwright() as p:
   page.locator('#createBackup').click();page.wait_for_function("document.querySelectorAll('#backupList .backup-row').length>0",timeout=3000)
   assert page.locator('#backupList .backup-row').count()==1;page.locator('#closeSettings').click()
   print('PASS: DE/EN, anpassbare Personenbezeichnungen, Einstellungen und Sicherungsdialog')
-  page.set_viewport_size({'width':390,'height':844});assert page.locator('#pageTitle').is_visible();assert page.locator('#nav button').count()==8
+  page.set_viewport_size({'width':390,'height':844});assert page.locator('#pageTitle').is_visible();assert page.locator('#nav button').count()==9
   print('PASS: schmale Mobilansicht bleibt bedienbar')
   SCREENSHOT.parent.mkdir(parents=True,exist_ok=True)
   clean=browser.new_page(viewport={'width':1440,'height':1000});clean.set_content(html,wait_until='domcontentloaded',timeout=10000);clean.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
