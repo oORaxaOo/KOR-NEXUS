@@ -19,7 +19,7 @@ The application obtains the token from `gh auth token` at runtime. Alternatively
 
 ## Capabilities and guardrails
 
-- Repository selection spans repositories the GitHub account is authorized to access (the GitHub API returns a paginated first batch of up to 100 repositories).
+- Repository-Auswahl umfasst alle über das angemeldete GitHub-Konto autorisierten Repositories einschließlich privater Projekte und Spielprojekte. Die API wird vollständig paginiert; bis zu 10.000 Einträge pro paginierter Liste werden unterstützt. Größere Listen melden eine klare Begrenzung, statt unbemerkt abgeschnitten zu werden.
 - View branch names, open issues, pull requests, recent commits and recent Actions runs.
 - Create issues, create a named working branch from a selected existing branch, open pull requests, and manually dispatch a workflow.
 - Every write action requires a confirmation prompt.
