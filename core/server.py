@@ -1401,7 +1401,7 @@ def main():
     if headless_mode and not server.shutdown_event.is_set():
         try:
             while not server.shutdown_event.is_set():server.handle_request()
-        except KeyboardInterrupt:print('\\nKOR-NEXUS wird beendet.')
+        except KeyboardInterrupt:print('\nKOR-NEXUS wird beendet.')
     stop_backups.set()
     _stop_code_ide()
     try: mesh.stop()
