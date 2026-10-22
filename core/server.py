@@ -5,8 +5,14 @@ import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shut
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
-from core import mesh
-from core.simulation import simulate_resource_runway
+try:
+    from core import mesh
+    from core.simulation import simulate_resource_runway
+except ModuleNotFoundError:
+    # Support launchers that execute core/server.py by absolute path from any working directory.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from core import mesh
+    from core.simulation import simulate_resource_runway
 
 APP_NAME = 'KOR-NEXUS'
 VERSION = '1.20.0'
@@ -790,10 +796,10 @@ class AppHandler(BaseHTTPRequestHandler):
             filename=os.path.basename(str(data.get('filename','')).replace(chr(92),'/')).strip()
             encoded=data.get('content_base64')
             if not filename or filename in ('.','..') or len(filename)>180 or any(ord(ch)<32 for ch in filename): return self.fail(400,'Ungültiger Dateiname.')
-            if not isinstance(encoded,str) or len(encoded)>16*1024*1024: return self.fail(400,'Datei fehlt oder ist zu groß (max. 12 MiB).')
+            if not isinstance(encoded,str) or len(encoded)>11*1024*1024: return self.fail(400,'Datei fehlt oder ist zu groß (max. 8 MiB).')
             try: payload=base64.b64decode(encoded,validate=True)
             except (ValueError,binascii.Error): return self.fail(400,'Dateiinhalt ist kein gültiges Base64.')
-            if not payload or len(payload)>12*1024*1024: return self.fail(400,'Datei muss zwischen 1 Byte und 12 MiB groß sein.')
+            if not payload or len(payload)>8*1024*1024: return self.fail(400,'Datei muss zwischen 1 Byte und 8 MiB groß sein.')
             UPLOAD_DIR.mkdir(parents=True,exist_ok=True,mode=0o700)
             safe_name=re.sub(r'[^A-Za-z0-9._() -]','_',filename)[:140].strip(' .') or 'upload.bin'
             target=UPLOAD_DIR/(uuid.uuid4().hex+'-'+safe_name)
