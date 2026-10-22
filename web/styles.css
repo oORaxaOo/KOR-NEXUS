@@ -419,3 +419,12 @@ body.kor-big-screen-active .matrix-console-panel{display:flex}
 .console-stream::-webkit-scrollbar{width:4px}.console-stream::-webkit-scrollbar-thumb{background:var(--red,#d44445)}
 body:not(.kor-big-screen-active) .hud-status-bar{opacity:.92}
 @media(max-width:700px){.hud-status-bar{top:72px;left:8px;right:8px;max-width:none;gap:6px;padding:6px}.matrix-console-panel{right:8px;bottom:8px;width:calc(100vw - 16px);height:150px}.console-stream{font-size:9px}}
+
+
+/* Matrix console severity colors; log text is inserted as textContent by hud.js. */
+.console-log-line{overflow-wrap:anywhere}
+.console-log-line.level-info{color:#92999d}
+.console-log-line.level-ready{color:#ffd700}
+.console-log-line.level-warn{color:#ffb454}
+.console-log-line.level-error{color:#ff5555}
+.console-log-line.level-get,.console-log-line.level-post{color:#00d8e8}
