@@ -1,0 +1,27 @@
+name: GitHub Development Center Validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, github-development-center]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python syntax
+        run: python -m compileall -q core tests
+      - name: GitHub integration unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: JavaScript syntax
+        run: node --check web/js/github-center.js
+      - name: Verify UI and documentation
+        run: |
+          test -s web/github.html
+          grep -q 'github.html' web/index.html
+          test -s GITHUB_CENTER.md
