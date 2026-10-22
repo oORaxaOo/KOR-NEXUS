@@ -435,3 +435,5 @@ body:not(.kor-big-screen-active) .hud-status-bar{opacity:.92}
 body.media-floating .media-view{position:fixed;display:block!important;right:12px;bottom:12px;top:auto;left:auto;width:min(420px,calc(100vw - 24px));z-index:10019;padding:0;background:transparent;pointer-events:none}body.media-floating .media-view .media-welcome,body.media-floating .media-view .media-radio,body.media-floating .media-view .media-offline,body.media-floating .media-view .media-footnote{display:none!important}body.media-floating .media-view .media-layout{display:block;pointer-events:auto}body.media-floating .media-view .media-primary{margin:0;max-width:none;pointer-events:auto}
 @media(max-width:900px){.media-layout,.media-layout.focus-layout{grid-template-columns:minmax(0,1fr)}.media-layout.focus-layout .media-primary{grid-row:auto}.media-offline{grid-column:auto}.media-welcome{align-items:flex-start;flex-direction:column}.media-layout.focus-layout .media-radio{position:static}}
 @media(prefers-reduced-motion:reduce){.media-view *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+.media-view[hidden]{display:none!important}
