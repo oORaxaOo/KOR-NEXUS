@@ -65,3 +65,10 @@ def media_path(filename: str) -> Path | None:
 
 def media_mime(path: Path) -> str:
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+def set_media_favorite(file_id: int, favorite: bool) -> bool:
+    init_media_db()
+    with sqlite3.connect(DB_PATH, timeout=15) as con:
+        cur=con.execute("UPDATE emergency_media SET is_favorite=? WHERE id=?", (1 if favorite else 0, int(file_id)))
+        con.commit()
+        return cur.rowcount > 0
