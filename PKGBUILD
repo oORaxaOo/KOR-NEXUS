@@ -28,14 +28,15 @@ package() {
   install -d "$pkgdir/opt/kor-workstation" "$pkgdir/usr/bin" \
     "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/scalable/apps" \
     "$pkgdir/usr/share/licenses/kor-workstation" "$pkgdir/usr/share/doc/kor-workstation"
-  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/web/geodata"
-  install -m644 core/server.py core/__init__.py "$pkgdir/opt/kor-workstation/core/"
+  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/web/js"
+  install -m644 core/server.py core/__init__.py core/mesh.py core/simulation.py "$pkgdir/opt/kor-workstation/core/"
   install -m644 web/index.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
+  install -m644 web/js/hud-alerts.js "$pkgdir/opt/kor-workstation/web/js/"
   install -m644 web/geodata/world.geojson "$pkgdir/opt/kor-workstation/web/geodata/world.geojson"
   install -m755 packaging/kor-workstation-launcher.sh "$pkgdir/usr/bin/kor-workstation"
   install -m755 packaging/kor-workstation-stop.sh "$pkgdir/usr/bin/kor-workstation-stop"
   install -m644 packaging/kor-workstation.desktop "$pkgdir/usr/share/applications/kor-workstation.desktop"
   install -m644 packaging/icons/kor-workstation.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/kor-workstation.svg"
   install -m644 LICENSE "$pkgdir/usr/share/licenses/kor-workstation/LICENSE"
-  install -m644 README.md EXPORT_SCHEMA.md DECISIONS.md PROJECT_STATUS.md CHANGELOG.md "$pkgdir/usr/share/doc/kor-workstation/"
+  install -m644 README.md EXPORT_SCHEMA.md DECISIONS.md PROJECT_STATUS.md CHANGELOG.md KDE_PLASMA_HUD.md "$pkgdir/usr/share/doc/kor-workstation/"
 }
