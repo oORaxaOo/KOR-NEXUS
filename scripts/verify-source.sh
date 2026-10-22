@@ -20,7 +20,7 @@ if 'hud-alerts.js' not in html: raise SystemExit('FEHLER: HUD-Erweiterung nicht 
 if './github.html' not in html: raise SystemExit('FEHLER: GitHub Development Center ist nicht in der Navigation verlinkt')
 if './code.html' not in html: raise SystemExit('FEHLER: Code Workbench ist nicht in der Kommandozentrale verlinkt')
 code_html=Path('web/code.html').read_text()
-if '/api/ide/status' not in code_html or '/api/ide/start' not in code_html: raise SystemExit('FEHLER: Code Workbench API-Anbindung fehlt')
+if "api('/ide/status')" not in code_html or "api('/ide/start')" not in code_html: raise SystemExit('FEHLER: Code Workbench API-Anbindung fehlt')
 if "127.0.0.1" not in Path('core/server.py').read_text(): raise SystemExit('FEHLER: lokaler Loopback-Bind der Code-IDE fehlt')
 if 'web/code.html' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: Code Workbench fehlt im Arch-Paket')
 github_html=Path('web/github.html').read_text()
