@@ -86,6 +86,7 @@ Der optionale Browser-Smoke-Test schreibt Screenshots nach `preview/smoke-test.p
 
 ## Enthaltene Funktionen
 
+- **GitHub Development Center:** lokale Verwaltung aller für das angemeldete GitHub-Konto autorisierten Repositories einschließlich Spielprojekte; vollständige Repository-Paginierung, Branches, offene Issues und Pull Requests, letzte Commits und GitHub Actions. Issue-, Branch-, PR- und Workflow-Aktionen werden bestätigt. Tokens bleiben serverseitig und werden weder an den Browser noch in SQLite ausgegeben; automatische Pushes oder Merges gibt es nicht. Einrichtung: `GITHUB_CENTER.md`.
 - **Atlas:** offline verfügbare Weltgeometrien, Welt-/Deutschland-Ansicht, WGS84-Projektmarker mit Bearbeiten/Verschieben, Status, Fortschritt, Suche/Filter und Verknüpfungen zu Projekten, Aufgaben, Mitgliedern und Ressourcen; regionale Ressourcenübersicht, durchsuchbarer Atlas-Notizbestand und Index aller 16 Bundesländer. Bundesland-Polygone können als GeoJSON (WGS84/EPSG:4326) importiert werden.
 - **Projekte:** beliebige Einträge mit Titel, ausführlichem Inhalt, Bereich und Tags; Bearbeiten, Suchen und Löschen.
 - **Archiv:** lokale Wissensbasis für Grundsätze, Referenzen und Notizen.

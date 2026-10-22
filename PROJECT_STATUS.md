@@ -1,6 +1,15 @@
 # Projektstatus — KOR-NEXUS
 
-Stand: 2026-10-16 · Version 1.20.0 · Schwerpunkt: Repository-Wiederherstellung, Ordnung und Release-Verifikation
+Stand: 2026-10-22 · Version 1.20.0 · Schwerpunkt: GitHub Development Center und Repository-Verifikation
+
+## Feature-Branch — GitHub Development Center (nicht veröffentlicht)
+
+- [x] Lokale GitHub-Integration über GitHub CLI oder Laufzeit-Umgebungsvariablen; Tokens bleiben aus Browser, SQLite und Quellcode heraus.
+- [x] Repository-Übersicht mit vollständiger Paginierung; private Repositories und Spielprojekte werden nicht auf die ersten 100 API-Ergebnisse begrenzt.
+- [x] Vollständige Branch-Paginierung für die ausgewählte Repository-Ansicht und zusätzliche Validierung von Quell-/Ziel-Branch-Referenzen.
+- [x] Regressionstests für spätere Repository-Seiten, Überlauf-Schutz und ungültige Branch-Referenzen.
+- [x] Schreibaktionen benötigen UI-Bestätigung; kein automatischer Push, Merge, Release oder Tag.
+- [ ] Pull Request #12 und die Qualitäts-/Paket-Gates prüfen; kein Merge ausgeführt.
 
 ## Release 1.20.0 — Repository-Transfer und Qualitätsprüfung
 

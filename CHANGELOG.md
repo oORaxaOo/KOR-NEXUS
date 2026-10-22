@@ -1,5 +1,12 @@
 # KOR-NEXUS Änderungsprotokoll
 
+## Unveröffentlicht — GitHub Development Center (Feature-Branch)
+
+- GitHub-Kommandozentrale ergänzt: autorisierte Repositories, Branches, offene Issues/PRs, Commits und Actions.
+- Repository- und Branch-Listen vollständig paginiert; ungültige Branch-Referenzen und übergroße Ergebnisse werden explizit abgewiesen.
+- Token nur zur Laufzeit aus GitHub CLI bzw. Umgebungsvariablen; keine Speicherung in der Datenbank und keine Ausgabe an das Frontend.
+- Bestätigung vor Issue-, Branch-, PR- und Workflow-Schreibaktionen; kein automatischer Push oder Merge.
+
 ## 1.20.0 — Repository-Transfer, Bereinigung und Release-Gates
 
 - Den vollständigen Projektbaum in `transfer/kor-nexus-1.20.0` wiederhergestellt und die Platzhalter-README durch eine aktuelle Projektübersicht ersetzt.

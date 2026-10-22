@@ -17,8 +17,12 @@ for token in ("Name            : kor-workstation", "Version         : 1.20.0"):
         raise SystemExit(f"Package metadata missing expected value: {token}")
 for expected in (
     "opt/kor-workstation/core/server.py",
+    "opt/kor-workstation/core/media.py",
     "opt/kor-workstation/core/window.py",
+    "opt/kor-workstation/core/github_integration.py",
     "opt/kor-workstation/web/js/hud.js",
+    "opt/kor-workstation/web/github.html",
+    "opt/kor-workstation/web/js/github-center.js",
     "opt/kor-workstation/web/geodata/world.geojson",
     "usr/bin/kor-workstation",
     "usr/bin/kor-workstation-stop",
