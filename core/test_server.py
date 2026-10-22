@@ -50,10 +50,13 @@ class CoreApiTests(unittest.TestCase):
 
     def test_native_window_is_default_and_headless_mode_is_explicit(self):
         with patch.dict('os.environ', {}, clear=True):
-            self.assertNotEqual(__import__('os').environ.get('KOR_NO_BROWSER'), '1')
-            self.assertNotEqual(__import__('os').environ.get('KOR_NATIVE_WINDOW'), '0')
-        with patch.dict('os.environ', {'KOR_NO_BROWSER': '1'}):
-            self.assertEqual(__import__('os').environ.get('KOR_NO_BROWSER'), '1')
+            self.assertTrue(app.native_window_enabled())
+        with patch.dict('os.environ', {'KOR_NO_BROWSER': '1'}, clear=True):
+            self.assertFalse(app.native_window_enabled())
+        with patch.dict('os.environ', {'KOR_NATIVE_WINDOW': '0'}, clear=True):
+            self.assertFalse(app.native_window_enabled())
+        with patch.dict('os.environ', {'KOR_NATIVE_WINDOW': 'auto'}, clear=True):
+            self.assertTrue(app.native_window_enabled())
 
     def test_health_and_storage(self):
         status,d=self.req('/api/health');self.assertEqual(status,200);self.assertTrue(d['ok']);self.assertEqual(d['database'],'SQLite');self.assertEqual(d['version'],'1.20.0')
