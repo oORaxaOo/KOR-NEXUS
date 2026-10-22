@@ -1397,7 +1397,12 @@ def main():
                 add_system_log('ERROR','WINDOW','Eigenständiges Desktop-Fenster konnte nicht gestartet werden: '+str(exc))
                 print('[KOR] Das eigenständige Desktop-Fenster konnte nicht gestartet werden. Es wird absichtlich kein Browser geöffnet. Details: '+str(exc),file=sys.stderr)
             finally:
-                server.shutdown()
+                if native_error:
+                    # A failed Qt startup must not risk blocking on shutdown()
+                    # before serve_forever has entered its loop.
+                    server.shutdown_event.set()
+                else:
+                    server.shutdown()
     if headless_mode and not server.shutdown_event.is_set():
         try:
             while not server.shutdown_event.is_set():server.handle_request()
