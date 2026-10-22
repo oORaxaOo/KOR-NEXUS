@@ -23,7 +23,7 @@ class KorNexusWindow(QMainWindow):
         profile = QWebEngineProfile.defaultProfile()
         profile.setPersistentStoragePath(str(self.profile_dir))
         profile.setCachePath(str(self.profile_dir / "cache"))
-        self.browser.setUrl(QUrl(url))
+        self.browser.setUrl(QUrl(url + ("&" if "?" in url else "?") + "native=1"))
         self.setCentralWidget(self.browser)
         self.showFullScreen()
 
