@@ -31,6 +31,25 @@ class CodeWorkbenchWorkspaceTests(unittest.TestCase):
             self.assertEqual(roots, [project_root.resolve()])
             self.assertTrue(all(root.is_dir() for root in roots))
 
+    def test_default_roots_never_grant_the_entire_home_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            checkout = base / "KOR-NEXUS"
+            checkout.mkdir()
+            (checkout / ".git").mkdir()
+            home = base / "home"
+            home.mkdir()
+            projects = home / "Projects"
+            projects.mkdir()
+            with patch.dict(os.environ, {"KOR_WORKSPACE_ROOTS": ""}), patch.object(server, "ROOT", checkout), patch("core.server.Path.home", return_value=home):
+                roots = server._ide_workspace_roots()
+            self.assertEqual(roots, [checkout.resolve(), projects.resolve()])
+            (checkout / ".git").rmdir()
+            with patch.dict(os.environ, {"KOR_WORKSPACE_ROOTS": ""}), patch.object(server, "ROOT", checkout), patch("core.server.Path.home", return_value=home):
+                roots = server._ide_workspace_roots()
+            self.assertEqual(roots, [projects.resolve()])
+            self.assertNotIn(home.resolve(), roots)
+
     def test_workspace_listing_only_includes_projects_or_root(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

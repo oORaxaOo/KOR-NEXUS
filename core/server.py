@@ -52,7 +52,13 @@ _ide_workspace = None
 def _ide_workspace_roots():
     """Return existing, canonical roots explicitly available to the local code IDE."""
     configured = os.environ.get('KOR_WORKSPACE_ROOTS', '')
-    raw_roots = [part for part in configured.split(os.pathsep) if part.strip()] if configured else [str(ROOT.parent), str(Path.home() / 'Projects')]
+    if configured:
+        raw_roots = [part for part in configured.split(os.pathsep) if part.strip()]
+    else:
+        # Never grant the user's entire home directory (or a system install parent)
+        # as an IDE workspace. In a source checkout, allow that repository only.
+        raw_roots = [str(ROOT)] if (ROOT / '.git').exists() else []
+        raw_roots.append(str(Path.home() / 'Projects'))
     roots = []
     for raw in raw_roots:
         try:

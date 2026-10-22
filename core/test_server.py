@@ -499,4 +499,58 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(target.read_bytes(),b'KOR test attachment')
         self.assertEqual(target.stat().st_mode & 0o777,0o600)
 
+
+    def test_code_ide_status_lists_only_recognized_projects_in_configured_roots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = root / 'KOR-Eternal-Frontier'
+            repository.mkdir()
+            (repository / '.git').mkdir()
+            project = root / 'Kor-Motorforge'
+            project.mkdir()
+            (project / 'pyproject.toml').write_text("[project]\nname='kor-motorforge'\n", encoding='utf-8')
+            unrelated = root / 'private-random-folder'
+            unrelated.mkdir()
+            with patch.dict('os.environ', {'KOR_WORKSPACE_ROOTS': str(root)}), patch('core.server.shutil.which', return_value='/usr/bin/code-server'):
+                status, data = self.req('/api/ide/status')
+            self.assertEqual(status, 200)
+            self.assertTrue(data['available'])
+            paths = {item['path'] for item in data['workspaces']}
+            self.assertIn(str(root.resolve()), paths)
+            self.assertIn(str(repository.resolve()), paths)
+            self.assertIn(str(project.resolve()), paths)
+            self.assertNotIn(str(unrelated.resolve()), paths)
+
+    def test_code_ide_start_rejects_paths_outside_configured_roots(self):
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as outside:
+            root = Path(temporary)
+            allowed = root / 'project'
+            allowed.mkdir()
+            forbidden = Path(outside)
+            with patch.dict('os.environ', {'KOR_WORKSPACE_ROOTS': str(root)}), patch('core.server.shutil.which', return_value='/usr/bin/code-server'), patch('core.server.subprocess.Popen') as popen:
+                status, data = self.req('/api/ide/start', 'POST', {'workspace': str(forbidden)})
+            self.assertEqual(status, 400)
+            self.assertIn('außerhalb', data['error'])
+            popen.assert_not_called()
+
+    def test_code_ide_start_rejects_symlink_workspace_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real = root / 'real-project'
+            real.mkdir()
+            link = root / 'project-link'
+            link.symlink_to(real, target_is_directory=True)
+            with patch.dict('os.environ', {'KOR_WORKSPACE_ROOTS': str(root)}), patch('core.server.shutil.which', return_value='/usr/bin/code-server'), patch('core.server.subprocess.Popen') as popen:
+                status, data = self.req('/api/ide/start', 'POST', {'workspace': str(link)})
+            self.assertEqual(status, 400)
+            self.assertIn('Symbolische Links', data['error'])
+            popen.assert_not_called()
+
+    def test_code_ide_start_reports_missing_binary_without_spawning(self):
+        with patch('core.server.shutil.which', return_value=None), patch('core.server.subprocess.Popen') as popen:
+            status, data = self.req('/api/ide/start', 'POST', {'workspace': str(Path(self.tmp.name))})
+        self.assertEqual(status, 503)
+        self.assertIn('nicht installiert', data['error'])
+        popen.assert_not_called()
+
 if __name__=='__main__':unittest.main()
