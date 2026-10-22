@@ -90,14 +90,14 @@ with sync_playwright() as p:
   page.set_content(html,wait_until='domcontentloaded',timeout=10000)
   page.wait_for_function("document.documentElement.dataset.appReady === 'true'",timeout=8000)
   assert page.title()=='KOR-NEXUS // COMMAND NEXUS'
-  assert page.locator('#nav button').count()==8
+  assert page.locator('#nav button').count()==9
   assert page.locator('#stateGrid .state-button').count()==16
   page.locator('#commandPaletteBtn').click();page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('nachrichten');assert page.locator('#commandResults .command-result').count()>=1;assert 'NACHRICHTEN' in page.locator('#commandResults').inner_text();page.keyboard.press('Enter');page.wait_for_function("document.querySelector('#moduleTitle').textContent.includes('Nachrichten') || document.querySelector('#newsView').hidden===false",timeout=3000)
   page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('task erstellen');assert page.locator('#commandResults .command-result').count()==1;page.locator('#closeCommandPalette').click();page.locator('#commandPalette').wait_for(state='hidden')
   page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('');page.keyboard.press('ArrowDown');assert page.evaluate("document.activeElement.dataset.commandIndex")=='0';page.keyboard.press('ArrowDown');assert page.evaluate("document.activeElement.dataset.commandIndex")=='1';page.keyboard.press('ArrowUp');assert page.evaluate("document.activeElement.dataset.commandIndex")=='0';page.keyboard.press('Escape');page.locator('#commandPalette').wait_for(state='hidden')
   page.keyboard.press('Control+k');page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('kein-befehl-darf-das-treffen');assert page.locator('#commandResults .command-result').count()==0;assert page.locator('.command-empty').is_visible();page.keyboard.press('Escape');page.locator('#commandPalette').wait_for(state='hidden')
   print('PASS: Befehlssuche per Klick und Ctrl+K, Filterung, Enter-Navigation, Pfeiltasten-Fokus und Schließen')
-  print('PASS: UI startet, 8 Module und 16 Bundesländerindex-Elemente sind sichtbar')
+  print('PASS: UI startet, 9 Module und 16 Bundesländerindex-Elemente sind sichtbar')
   page.locator('#nav [data-module=workbench]').click();page.locator('#workbenchView').wait_for(state='visible')
   page.locator('#workbenchNoteTitle').fill('QA-Werkbanknotiz');page.locator('#workbenchNoteBody').fill('Persistenter Testinhalt');page.locator('#workbenchNoteTags').fill('QA, Architektur');page.locator('#workbenchNoteForm button[type=submit]').click()
   page.get_by_text('QA-Werkbanknotiz').wait_for(timeout=3000);assert page.locator('#workbenchNotes .workbench-note').count()==1
