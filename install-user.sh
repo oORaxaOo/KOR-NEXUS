@@ -72,4 +72,4 @@ printf 'Start: Anwendungsmenü „KOR-NEXUS“ oder %q\n' "$BIN_DIR/kor-workstat
 printf 'Stop:  %q\n' "$BIN_DIR/kor-workstation-stop"
 printf 'Datenbank/Backups bleiben getrennt unter: %s/kor-workstation\n' "$DATA_HOME"
 printf 'Startprotokoll (max. zwei Generationen): %s/server.log\n' "$LOG_DIR"
-printf 'Browser: Chromium/Chrome wird bevorzugt; Firefox oder xdg-open/gio sind Fallbacks.\n'
+printf 'Oberfläche: eigenständiges KOR-NEXUS-Desktopfenster (PyQt6 WebEngine).\n'\nprintf 'Benötigt unter Arch Linux: python-pyqt6 und python-pyqt6-webengine.\n'
