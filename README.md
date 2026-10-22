@@ -59,13 +59,14 @@ Vor dem endgültigen JSON-Import zeigt die Oberfläche eine serverseitig validie
 
 ### Direkt aus dem Projektordner
 
-Python 3 ist die einzige notwendige Anwendungs-Laufzeit; eine Prozesssperre im Python-Kern schützt alle Startwege vor konkurrierenden Instanzen. Zusätzliche Python-Pakete, npm-Downloads, eine Cloud-Verbindung und Root-Rechte sind nicht erforderlich.
+Der Kern benötigt Python 3. Für das native Vollbildfenster werden unter Arch Linux PyQt6 und Qt WebEngine verwendet. Die Anwendung bleibt lokal; die Prozesssperre im Python-Kern schützt alle Startwege vor konkurrierenden Instanzen. Als Browser-Fallback kann sie auch ohne Qt gestartet werden.
 
 ```bash
+sudo pacman -S python python-pyqt6 python-pyqt6-webengine
 ./launch.sh
 ```
 
-Der Start erstellt bzw. öffnet die lokale SQLite-Datenbank und öffnet die Oberfläche unter `http://127.0.0.1:8765/`. Wenn Chromium oder Chrome installiert ist, wird die Anwendung bevorzugt in einem eigenen App-Fenster geöffnet. Andernfalls wird ein verfügbarer Browser verwendet. Ein zweiter Start verwendet den bereits laufenden KOR-Kern wieder. Mit `./stop.sh` lässt sich der laufende Kern gezielt beenden. Nach einer Benutzerinstallation stehen `~/.local/bin/kor-workstation` und `~/.local/bin/kor-workstation-stop` zur Verfügung.
+Der Start erstellt bzw. öffnet die lokale SQLite-Datenbank und zeigt KOR-NEXUS im nativen PyQt6-WebEngine-Fenster im Vollbild. `Esc` wechselt zwischen Vollbild und maximiertem Fenster; `Alt+F4` und der Beenden-Button schließen die Anwendung. Der Live-HUD zeigt den UDP-Mesh-Status und die letzten Systemereignisse. Die LAN-Erkennung sendet alle 10 Sekunden nur das Kennsignal `KOR_NEXUS_BEACON_ACTIVE` über UDP-Port 8766; es werden keine persönlichen Daten übertragen. Ohne installierte Qt-Pakete fällt der Start auf das bisherige Browserfenster zurück. Ein zweiter Start verwendet den bereits laufenden KOR-Kern wieder. Mit `./stop.sh` lässt sich der laufende Kern gezielt beenden. Nach einer Benutzerinstallation stehen `~/.local/bin/kor-workstation` und `~/.local/bin/kor-workstation-stop` zur Verfügung.
 
 ### Dauerhafte Benutzerinstallation unter Arch Linux
 
