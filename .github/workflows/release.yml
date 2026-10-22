@@ -120,7 +120,7 @@ jobs:
     steps:
       - name: Install CI runtime and package dependencies
         run: |
-          pacman -Syu --noconfirm --needed git python nodejs npm
+          pacman -Syu --noconfirm --needed git python nodejs npm python-pyqt6 python-pyqt6-webengine
           useradd --create-home --shell /bin/bash builder
           printf 'builder ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/ci-builder
           chmod 0440 /etc/sudoers.d/ci-builder
