@@ -34,7 +34,7 @@ import re
 p=Path('PKGBUILD').read_text()
 version=re.search(r"^VERSION\s*=\s*['\"]([^'\"]+)['\"]", Path('core/server.py').read_text(), re.M)
 if not version: raise SystemExit('FEHLER: Laufzeitversion fehlt')
-for x in ('pkgname=kor-workstation',f'pkgver={version.group(1)}','depends=(\'python\')','packaging/kor-workstation.desktop','kor-workstation-stop.sh','EXPORT_SCHEMA.md','CHANGELOG.md'):
+for x in ('pkgname=kor-workstation',f'pkgver={version.group(1)}','depends=(\'python\' \'python-pyqt6\' \'python-pyqt6-webengine\')','packaging/kor-workstation.desktop','kor-workstation-stop.sh','EXPORT_SCHEMA.md','CHANGELOG.md'):
     if x not in p: raise SystemExit(f'FEHLER: Arch-Paketdefinition erwartet {x}')
 print('OK  Arch-Paketdefinition enthält die Python-Kernlaufzeit')
 PY
