@@ -25,13 +25,14 @@ class KorNexusWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("KOR-NEXUS // COMMAND CENTER")
         self.setMinimumSize(960, 640)
-        self.browser = QWebEngineView(self)
-        self.browser.setPage(KorNexusPage(QWebEngineProfile.defaultProfile(), self.browser))
+        self.server_url = url.rstrip("/")
         self.profile_dir = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "kor-workstation" / "qt_profile"
         self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         profile = QWebEngineProfile.defaultProfile()
         profile.setPersistentStoragePath(str(self.profile_dir))
         profile.setCachePath(str(self.profile_dir / "cache"))
+        self.browser = QWebEngineView(self)
+        self.browser.setPage(KorNexusPage(profile, self.browser))
         self.browser.setUrl(QUrl(url + ("&" if "?" in url else "?") + "native=1"))
         self.setCentralWidget(self.browser)
         self.showFullScreen()
@@ -50,7 +51,7 @@ class KorNexusWindow(QMainWindow):
         # Notify the local core so its normal cleanup path can run.
         try:
             request = Request(
-                self.browser.url().toString().rstrip("/") + "/api/shutdown",
+                self.server_url + "/api/shutdown",
                 data=b"{}",
                 headers={"Content-Type": "application/json"},
                 method="POST",
