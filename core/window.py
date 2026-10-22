@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtCore import QEvent, QUrl, Qt
 from PyQt6.QtWidgets import QApplication, QMainWindow
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -24,6 +24,9 @@ class KorNexusWindow(QMainWindow):
     def __init__(self, url: str) -> None:
         super().__init__()
         self.setWindowTitle("KOR-NEXUS // COMMAND CENTER")
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         self.setMinimumSize(960, 640)
         self.server_url = url.rstrip("/")
         self.profile_dir = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "kor-workstation" / "qt_profile"
@@ -36,6 +39,16 @@ class KorNexusWindow(QMainWindow):
         self.browser.setUrl(QUrl(url + ("&" if "?" in url else "?") + "native=1"))
         self.setCentralWidget(self.browser)
         self.showFullScreen()
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+            if self.isFullScreen():
+                self.showMaximized()
+            else:
+                self.showFullScreen()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
