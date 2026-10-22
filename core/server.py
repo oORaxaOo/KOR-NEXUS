@@ -8,13 +8,13 @@ from xml.etree import ElementTree as ET
 try:
     from core import mesh
     from core.simulation import simulate_resource_runway
-from core import github_integration
 except ModuleNotFoundError:
     # Support launchers that execute core/server.py by absolute path from any working directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from core import mesh
     from core.simulation import simulate_resource_runway
 
+from core import github_integration
 from core.media import check_emergency_readiness, media_path, media_mime, init_media_db, set_media_favorite
 
 APP_NAME = 'KOR-NEXUS'
