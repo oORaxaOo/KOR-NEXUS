@@ -222,9 +222,9 @@ with sync_playwright() as p:
   assert 'linear-gradient' in clean.evaluate("getComputedStyle(document.querySelector('.page-head'),'::after').getPropertyValue('background-image')")
   assert clean.evaluate("getComputedStyle(document.querySelector('.panel-head'),'::before').getPropertyValue('width')")=='2px'
   assert '--grid-line' in clean.locator('html').get_attribute('style') if clean.locator('html').get_attribute('style') else True
-  assert design['nav']==8,design
+  assert design['nav']==9,design
   clean.screenshot(path=str(SCREENSHOT),full_page=True);clean.screenshot(path=str(DESKTOP_SHOT),full_page=True)
-  print('PASS: visuelle Design-Tokens, charakteristische Abschnittsmarkierung, Panel-Raster und sieben Module geprüft')
+  print('PASS: visuelle Design-Tokens, charakteristische Abschnittsmarkierung, Panel-Raster und Navigationsstruktur geprüft')
   clean.set_viewport_size({'width':390,'height':844});clean.wait_for_timeout(120)
   mobile=clean.evaluate("({viewport:innerWidth,document:document.documentElement.scrollWidth,nav:getComputedStyle(document.querySelector('.layout aside')).position,focusRule:[...document.styleSheets].some(s=>{try{return [...s.cssRules].some(r=>r.cssText.includes(':focus-visible'))}catch(e){return false}}),reducedMotion:[...document.styleSheets].some(s=>{try{return [...s.cssRules].some(r=>r.cssText.includes('prefers-reduced-motion'))}catch(e){return false}})})")
   assert mobile['nav']=='sticky',mobile
