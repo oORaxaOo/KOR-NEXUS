@@ -2,6 +2,9 @@
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 command -v python3 >/dev/null 2>&1 || { echo 'Python 3 fehlt. Bitte Python 3 installieren.' >&2; exit 1; }
+if ! python3 -c 'from PyQt6.QtWebEngineWidgets import QWebEngineView' >/dev/null 2>&1; then
+  printf 'Hinweis: Für das eigenständige Desktopfenster fehlen PyQt6-WebEngine-Abhängigkeiten. Unter Arch Linux: sudo pacman -S python-pyqt6 python-pyqt6-webengine. Es wird kein Browser-Fallback verwendet.\n' >&2
+fi
 [[ -s "$ROOT/core/server.py" && -s "$ROOT/web/index.html" && -s "$ROOT/web/app.js" && -s "$ROOT/web/geodata/world.geojson" ]] || { echo 'Installationsdateien fehlen; bitte das vollständige Archiv entpacken.' >&2; exit 1; }
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 APP_DIR="$DATA_HOME/kor-workstation-app"
@@ -72,4 +75,4 @@ printf 'Start: Anwendungsmenü „KOR-NEXUS“ oder %q\n' "$BIN_DIR/kor-workstat
 printf 'Stop:  %q\n' "$BIN_DIR/kor-workstation-stop"
 printf 'Datenbank/Backups bleiben getrennt unter: %s/kor-workstation\n' "$DATA_HOME"
 printf 'Startprotokoll (max. zwei Generationen): %s/server.log\n' "$LOG_DIR"
-printf 'Browser: Chromium/Chrome wird bevorzugt; Firefox oder xdg-open/gio sind Fallbacks.\n'
+printf 'Oberfläche: eigenständiges KOR-NEXUS-Desktopfenster (PyQt6 WebEngine).\n'\nprintf 'Benötigt unter Arch Linux: python-pyqt6 und python-pyqt6-webengine.\n'

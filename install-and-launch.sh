@@ -23,9 +23,9 @@ if [[ ! -x "$LAUNCHER" ]]; then
   exit 3
 fi
 
-# Start detached so the setup terminal can close. The application opens a local
-# browser/app window itself and writes diagnostics to its private state log.
+# Start detached so the setup terminal can close. The application opens its own
+# native desktop window and writes diagnostics to its private state log.
 nohup "$LAUNCHER" >/dev/null 2>&1 </dev/null &
-printf '\nFertig. KOR-NEXUS wird gestartet und sollte gleich ein Browser-/App-Fenster öffnen.\n'
+printf '\nFertig. KOR-NEXUS wird gestartet und sollte gleich sein eigenständiges Desktopfenster öffnen.\n'
 printf 'Später genügt ein Klick auf „KOR-NEXUS“ im Anwendungsmenü.\n'
 printf 'Falls kein Fenster erscheint, siehe: ${XDG_STATE_HOME:-$HOME/.local/state}/kor-workstation/server.log\n'

@@ -1,14 +1,12 @@
 # Maintainer: KOR-NEXUS project
 pkgname=kor-workstation
 pkgver=1.20.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Lokale SQLite-Workstation für Kor-Wissen, Projekte, Atlas und RSS'
 arch=('any')
 license=('custom:KOR-Project')
 depends=('python' 'python-pyqt6' 'python-pyqt6-webengine')
-optdepends=('chromium: separates App-Fenster im Ein-Klick-Start'
-            'xdg-utils: Browser-Fallback, falls Chromium fehlt'
-            'firefox: alternativer Browser')
+optdepends=()
 source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=('1489c6e83eba03e6856f04b39ce3ce1a20deca5e7b901f3b6ac0d30a19eb4ebb')
 

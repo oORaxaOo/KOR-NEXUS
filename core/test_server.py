@@ -42,12 +42,21 @@ class CoreApiTests(unittest.TestCase):
         with patch('core.server.urllib.request.urlopen',return_value=FakeResponse(json.dumps(health).encode('utf-8'))):
             self.assertFalse(app.active_instance('http://127.0.0.1:8765/'))
 
-    def test_missing_browser_reports_actionable_message(self):
-        output=io.StringIO()
-        with patch.object(app,'open_app',return_value=False), contextlib.redirect_stderr(output):
-            self.assertFalse(app.open_app_or_report('http://127.0.0.1:8765/'))
-        self.assertIn('Kein unterstützter Browser gefunden',output.getvalue())
-        self.assertIn('KOR-NEXUS läuft lokal weiter',output.getvalue())
+    def test_external_browser_fallback_is_removed(self):
+        # KOR-NEXUS must launch in its own Qt window or fail visibly; it must
+        # never silently fall back to a browser tab/window.
+        self.assertFalse(hasattr(app, 'open_app'))
+        self.assertFalse(hasattr(app, 'open_app_or_report'))
+
+    def test_native_window_is_default_and_headless_mode_is_explicit(self):
+        with patch.dict('os.environ', {}, clear=True):
+            self.assertTrue(app.native_window_enabled())
+        with patch.dict('os.environ', {'KOR_NO_BROWSER': '1'}, clear=True):
+            self.assertFalse(app.native_window_enabled())
+        with patch.dict('os.environ', {'KOR_NATIVE_WINDOW': '0'}, clear=True):
+            self.assertFalse(app.native_window_enabled())
+        with patch.dict('os.environ', {'KOR_NATIVE_WINDOW': 'auto'}, clear=True):
+            self.assertTrue(app.native_window_enabled())
 
     def test_health_and_storage(self):
         status,d=self.req('/api/health');self.assertEqual(status,200);self.assertTrue(d['ok']);self.assertEqual(d['database'],'SQLite');self.assertEqual(d['version'],'1.20.0')

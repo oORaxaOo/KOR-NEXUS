@@ -25,7 +25,7 @@ Für eine benutzerspezifische Installation mit Anwendungsmenü:
 ./install-user.sh
 ```
 
-Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
+KOR-NEXUS startet als eigenständiges Desktopprogramm in einem eigenen nativen Fenster auf Basis von PyQt6 und Qt WebEngine. Es öffnet weder Chrome/Firefox noch einen anderen externen Browser. Auch absichtlich geöffnete Tool-Fenster wie die Code Workbench bleiben native Anwendungsfenster innerhalb von KOR-NEXUS. Unter Arch Linux sind `python-pyqt6` und `python-pyqt6-webengine` erforderliche Laufzeitabhängigkeiten. Das lokale HTML/CSS/JavaScript wird intern von Qt WebEngine dargestellt; das ist keine Browser-Registerkarte und benötigt keine externe Browser-Anwendung. Der lokale HTTP-Kern bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
 
 ## Historische technische Änderungen
 

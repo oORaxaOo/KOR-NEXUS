@@ -64,6 +64,7 @@ jobs:
               'core/github_integration.py', 'tests/test_github_integration.py',
               'web/github.html', 'web/code.html', 'web/js/github-center.js', 'GITHUB_CENTER.md',
               'tests/test_code_workbench.py',
+              'scripts/qa-code-workbench-playwright.py', 'scripts/qa-native-window.py',
               'web/geodata/world.geojson', 'scripts/ci.sh',
               'scripts/release-check.sh', 'scripts/test-installation.sh',
               '.github/workflows/release.yml',
@@ -109,6 +110,9 @@ jobs:
       - name: Run browser UI smoke tests with a hard timeout
         run: timeout --signal=TERM --kill-after=10s 120s python scripts/qa-preview-playwright.py
 
+      - name: Verify Code Workbench opens its IDE window
+        run: timeout --signal=TERM --kill-after=10s 120s python scripts/qa-code-workbench-playwright.py
+
       - name: Run isolated user install/upgrade/stop/uninstall test
         run: timeout --signal=TERM --kill-after=10s 120s bash scripts/test-installation.sh
 
@@ -123,7 +127,7 @@ jobs:
     steps:
       - name: Install CI runtime and package dependencies
         run: |
-          pacman -Syu --noconfirm --needed git python nodejs npm python-pyqt6 python-pyqt6-webengine
+          pacman -Syu --noconfirm --needed git python nodejs npm python-pyqt6 python-pyqt6-webengine xorg-server-xvfb
           useradd --create-home --shell /bin/bash builder
           printf 'builder ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/ci-builder
           chmod 0440 /etc/sudoers.d/ci-builder
@@ -132,6 +136,32 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0 (Node.js 24)
         with:
           path: project
+
+      - name: Verify native Qt desktop shell is importable
+        working-directory: project
+        run: |
+          python - <<'PY'
+          from core.window import KorNexusPage, KorNexusPopupWindow, KorNexusWindow
+          assert callable(KorNexusPage.createWindow)
+          assert callable(KorNexusWindow.create_popup_page)
+          assert callable(KorNexusPopupWindow.create_popup_page)
+          print("Native Qt window shell and internal popup routing import successfully.")
+          PY
+
+      - name: Exercise native Qt window and internal IDE popup
+        working-directory: project
+        env:
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+        run: |
+          set -euo pipefail
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+          XVFB_PID=$!
+          trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
+          for _ in {1..30}; do
+            kill -0 "$XVFB_PID" 2>/dev/null || { echo 'Xvfb exited before becoming ready' >&2; exit 1; }
+            sleep 0.1
+          done
+          DISPLAY=:99 QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu" timeout --signal=TERM --kill-after=5s 45s python scripts/qa-native-window.py
 
       - name: Build and verify package as an unprivileged user
         working-directory: project
