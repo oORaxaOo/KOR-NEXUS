@@ -8,7 +8,7 @@ Zielbranch: transfer/kor-nexus-1.20.0
 
 - Optionaler MCP-Server über STDIO mit acht lesenden Werkzeugen sowie vier begrenzten Werkzeugen zum Erstellen/Bearbeiten von Aufgaben und strukturierten Einträgen.
 - Loopback-only API-Client; keine direkten SQLite-, Shell- oder Dateisystemwerkzeuge.
-- Native Hermes-Gateway-Plattform `kor_nexus` für Nachrichten aus dem KOR-NEXUS-HUD.
+- Native Hermes-Gateway-Plattform `kor_nexus` für Nachrichten aus dem KOR-NEXUS-HUD, inklusive eigenständigem User-Plugin-Einstiegspunkt.
 - Eingebettetes Lilith-Chatfenster mit eigener Browsersitzung und Statusanzeige.
 - Private lokale Bridge mit zufälligem Zugriffstoken, Loopback-Bindung, 0600-Datei und 0700-Konfigurationsverzeichnis.
 - Optionale Installation; KOR-NEXUS bleibt ohne Hermes betriebsfähig.
