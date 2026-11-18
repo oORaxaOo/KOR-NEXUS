@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import os
 import sys
+import tempfile
 import types
 import unittest
+import urllib.error
+import urllib.request
+from pathlib import Path
+from unittest.mock import patch
 from collections import deque
 from concurrent.futures import Future
 import threading
@@ -112,6 +120,41 @@ class PendingReplyTests(unittest.TestCase):
         self.adapter._cleanup_pending("message-id", "hud-session")
         self.assertNotIn("message-id", self.adapter._pending)
         self.assertEqual(list(self.adapter._pending_order["hud-session"]), [])
+
+    def test_bridge_binds_loopback_and_requires_private_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "hermes-bridge.json"
+            adapter = KORNexusAdapter(PlatformConfig())
+            adapter._port = 0
+            with patch.dict(os.environ, {"KOR_NEXUS_HERMES_CONFIG": str(config_path)}):
+                try:
+                    self.assertTrue(asyncio.run(adapter.connect()))
+                    host, port = adapter._httpd.server_address[:2]
+                    self.assertEqual(host, "127.0.0.1")
+                    self.assertTrue(config_path.is_file())
+                    self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+                    saved = json.loads(config_path.read_text(encoding="utf-8"))
+                    self.assertEqual(saved["host"], "127.0.0.1")
+                    self.assertEqual(saved["port"], port)
+                    self.assertGreaterEqual(len(saved["token"]), 32)
+
+                    with self.assertRaises(urllib.error.HTTPError) as rejected:
+                        urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
+                    self.assertEqual(rejected.exception.code, 403)
+
+                    request = urllib.request.Request(
+                        f"http://127.0.0.1:{port}/health",
+                        headers={"X-KOR-Bridge-Token": saved["token"]},
+                    )
+                    with urllib.request.urlopen(request, timeout=2) as response:
+                        payload = json.load(response)
+                    self.assertTrue(payload["ok"])
+                    self.assertEqual(payload["platform"], "kor_nexus")
+                finally:
+                    if adapter._httpd is not None:
+                        asyncio.run(adapter.disconnect())
+                    self.assertFalse(config_path.exists())
+
 
 
 if __name__ == "__main__":
