@@ -272,8 +272,9 @@ class KORNexusAdapter(BasePlatformAdapter):
             return False
 
     async def _dispatch(self, event: MessageEvent) -> None:
-        # BasePlatformAdapter.handle_message is synchronous and schedules GatewayRunner work.
-        self.handle_message(event)
+        # Hermes handle_message is async; await it so admission completes before we
+        # block the HTTP worker waiting for the correlated final reply.
+        await self.handle_message(event)
 
     def submit_message(self, session_id: str, text: str) -> str:
         if self._loop is None or not self._running:
