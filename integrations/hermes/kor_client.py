@@ -43,6 +43,9 @@ class KorNexusError(RuntimeError):
 
 def default_data_home() -> Path:
     """Match KOR-NEXUS' XDG data directory selection."""
+    explicit = os.environ.get("KOR_NEXUS_DATA_HOME", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
     raw = os.environ.get("XDG_DATA_HOME", "").strip()
     root = Path(raw).expanduser() if raw else Path.home() / ".local" / "share"
     return root / "kor-workstation"
