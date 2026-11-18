@@ -13,13 +13,16 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 APP_NAME = "KOR-NEXUS"
 DEFAULT_PORT = 8765
 DEFAULT_TIMEOUT = 5.0
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_ITEMS = 100
+
+# A local bridge must never route its HTTP request through environment-configured proxies.
+_DIRECT_HTTP = build_opener(ProxyHandler({}))
 
 READ_ROUTES = {
     "health": "/api/health",
@@ -94,7 +97,7 @@ class KorNexusClient:
         *,
         data_home: str | Path | None = None,
         timeout: float = DEFAULT_TIMEOUT,
-        opener=urlopen,
+        opener=None,
     ) -> None:
         self.data_home = Path(data_home).expanduser() if data_home else default_data_home()
         try:
@@ -104,7 +107,7 @@ class KorNexusClient:
         if not 1 <= requested_timeout <= 30:
             requested_timeout = DEFAULT_TIMEOUT
         self.timeout = requested_timeout
-        self._opener = opener
+        self._opener = opener or _DIRECT_HTTP.open
         configured_url = base_url or os.environ.get("KOR_NEXUS_BASE_URL", "").strip()
         self._explicit_url = bool(configured_url)
         self.base_url = validate_loopback_url(configured_url) if configured_url else self._discover_url()
