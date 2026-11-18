@@ -209,6 +209,18 @@ class KorNexusAdapter(BasePlatformAdapter):
                         metadata={"kor_nexus_message_id": message_id},
                     )
                     await self.handle_message(event)
+                    if getattr(event, "_gateway_accepted", False):
+                        await asyncio.to_thread(
+                            self._request_json,
+                            "POST",
+                            "/api/hermes/bridge/ack",
+                            {"message_ids": [message_id]},
+                        )
+                    else:
+                        logger.warning(
+                            "KOR-NEXUS: Hermes gateway has not accepted message %s; it remains queued",
+                            message_id,
+                        )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
