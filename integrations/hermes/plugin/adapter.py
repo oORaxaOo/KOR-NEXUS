@@ -208,7 +208,7 @@ class KorNexusAdapter(BasePlatformAdapter):
                         timestamp=dt.datetime.now(),
                         metadata={"kor_nexus_message_id": message_id},
                     )
-                    self.handle_message(event)
+                    await self.handle_message(event)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
