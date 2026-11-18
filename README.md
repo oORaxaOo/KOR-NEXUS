@@ -30,7 +30,7 @@ Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTM
 
 ## Optionale Hermes-Integration
 
-KOR-NEXUS kann optional über einen lokalen MCP-Server mit Hermes Agent verbunden werden. Phase I stellt ausschließlich lesende Werkzeuge bereit und verwendet ausschließlich die lokale KOR-NEXUS-HTTP-API; direkter SQLite-Zugriff und Shell-Werkzeuge sind nicht Teil der Integration. Installation, Sicherheitsgrenzen und Tests stehen in `integrations/hermes/README.md`.
+KOR-NEXUS kann optional vollständig mit Hermes Agent verbunden werden: Ein lokaler MCP-Server stellt lesende KOR-NEXUS-Werkzeuge bereit, ein Hermes-Gateway-Platform-Plugin bindet das Lilith-Chatfenster in das HUD ein. HUD, WhatsApp und weitere verbundene Kanäle verwenden dieselbe Hermes-Instanz; ihre Gesprächssitzungen bleiben getrennt. Die Integration verwendet ausschließlich die lokale KOR-NEXUS-HTTP-API und greift nicht direkt auf SQLite zu. Automatische Ereignis-Pushmeldungen und kontrollierte Schreibwerkzeuge sind weitere Ausbaustufen. Installation und Sicherheitsgrenzen stehen in `integrations/hermes/README.md`.
 
 ## Optionale lokale KI (llama.cpp)
 
