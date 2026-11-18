@@ -87,6 +87,7 @@ def install_minimal_hermes_stubs():
 
 
 install_minimal_hermes_stubs()
+from gateway.config import PlatformConfig
 from adapter import KORNexusAdapter
 
 
@@ -119,7 +120,7 @@ class PendingReplyTests(unittest.TestCase):
         self.adapter._pending_order["hud-session"].append("message-id")
         self.adapter._cleanup_pending("message-id", "hud-session")
         self.assertNotIn("message-id", self.adapter._pending)
-        self.assertEqual(list(self.adapter._pending_order["hud-session"]), [])
+        self.assertEqual(list(self.adapter._pending_order.get("hud-session", ())), [])
 
     def test_bridge_binds_loopback_and_requires_private_token(self):
         with tempfile.TemporaryDirectory() as tmp:
