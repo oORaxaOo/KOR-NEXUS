@@ -61,7 +61,7 @@ jobs:
               names = {member.name.removeprefix('./') for member in members}
           required = {
               'PKGBUILD', 'core/server.py', 'core/test_server.py',
-              'core/github_integration.py', 'tests/test_github_integration.py',
+              'core/github_integration.py', 'tests/test_github_integration.py', 'tests/test_hermes_plugin_contract.py',
               'web/github.html', 'web/code.html', 'web/hermes.html', 'web/js/hermes.js', 'web/js/github-center.js', 'GITHUB_CENTER.md',
               'integrations/hermes/setup.sh', 'integrations/hermes/plugin/plugin.yaml',
               'integrations/hermes/plugin/adapter.py', 'integrations/hermes/mcp_server.py',
