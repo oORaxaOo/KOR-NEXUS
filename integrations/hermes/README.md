@@ -1,55 +1,86 @@
-# KOR-NEXUS x Hermes — MCP-Verbindung (Phase I)
+# KOR-NEXUS x Hermes — vollständige lokale Integration
 
-Diese Integration stellt Hermes Agent zunächst ausschließlich lesende KOR-NEXUS-Werkzeuge über einen lokalen MCP-Server bereit. KOR-NEXUS bleibt ohne Hermes vollständig funktionsfähig.
+KOR-NEXUS erhält zwei getrennte Integrationswege:
 
-## Architektur und Sicherheitsgrenzen
+1. **MCP-Werkzeuge** geben Hermes lesenden Zugriff auf Status, Aufgaben, Projekte, Atlas-/Archivdatensätze, Ressourcen, Systemmetriken und den vorhandenen Nachrichten-Cache.
+2. **Hermes-Plattformplugin** ergänzt KOR-NEXUS als eigenen lokalen Chat-Kanal im Hermes Gateway. Nachrichten aus der KOR-NEXUS-Oberfläche laufen durch den regulären Hermes-Agenten; Antworten erscheinen wieder im selben KOR-NEXUS-Gespräch.
 
-- mcp_server.py stellt MCP-Werkzeuge über STDIO bereit. Hermes startet den Prozess lokal; es wird kein zusätzlicher Netzwerk-Port geöffnet.
-- kor_client.py spricht ausschließlich die bestehende KOR-NEXUS-HTTP-API an. Direkter SQLite-Zugriff ist ausgeschlossen.
-- Es werden nur Loopback-Adressen (127.0.0.1, localhost, ::1) akzeptiert.
-- Vor Datenabfragen prüft der Client /api/health und vergleicht das gemeldete Datenverzeichnis mit dem erwarteten KOR-NEXUS-Benutzerprofil.
-- Endpunkte, Ergebnisgrößen und Listenlängen sind begrenzt. Nachrichten werden aus dem vorhandenen RSS-Cache gelesen; MCP löst keinen externen Feed-Abruf aus.
-- Alle Werkzeuge sind lesend. Schreiben, Löschen, Restore, Shell-Ausführung und direkte Datenbankzugriffe sind nicht Teil dieser Phase.
+KOR-NEXUS bleibt ohne Hermes vollständig funktionsfähig. Das Plugin verändert keine bestehenden Telegram-, WhatsApp-, Discord- oder anderen Hermes-Kanäle. Jede Plattform behält ihre normale Hermes-Sitzungsidentität; es findet keine automatische Zusammenführung der Chatverläufe verschiedener Plattformen statt.
 
-## Bereitgestellte Werkzeuge
+## Architektur
 
-| MCP-Werkzeug | Zweck |
+- \`mcp_server.py\` stellt die MCP-Werkzeuge über STDIO bereit. Hermes startet den Prozess lokal; es wird kein zusätzlicher Netzwerk-Port geöffnet.
+- \`kor_client.py\` spricht ausschließlich die bestehende KOR-NEXUS-HTTP-API an. Direkter SQLite-Zugriff ist ausgeschlossen.
+- \`plugin/adapter.py\` registriert über die unterstützte Hermes-Community-Plugin-Schnittstelle den Plattformkanal \`kor_nexus\`.
+- KOR-NEXUS speichert Nachrichten lokal in zwei zusätzlichen SQLite-Tabellen. Das Gateway fragt die eingehende Warteschlange über einen privaten Bridge-Endpunkt ab und schreibt Antworten zurück.
+- Die lokale Chat-Oberfläche liegt unter \`web/hermes.html\`; in der KOR-NEXUS-Kopfzeile gibt es den Einstieg **⌘ HERMES**.
+
+## Sicherheitsgrenzen
+
+- KOR-NEXUS bleibt ausschließlich an \`127.0.0.1\` gebunden.
+- Bridge-Endpunkte akzeptieren nur einen privaten Bearer-Token. Der Token wird mit einem konstantzeitlichen Vergleich geprüft und in einer Datei mit Berechtigungen \`0600\` gespeichert.
+- Der Hermes-Adapter akzeptiert nur Loopback-HTTP-Adressen und verweigert HTTP-Weiterleitungen, damit der Bridge-Token nicht an ein anderes Ziel weitergereicht wird.
+- MCP und Plattformplugin öffnen keinen LAN-Listener und greifen nicht direkt auf SQLite zu.
+- Nachrichten und API-Antworten sind größenbegrenzt; die MCP-Werkzeuge bleiben ausschließlich lesend.
+- Die Einrichtung ergänzt nur die KOR-NEXUS-Plugin-Dateien und die ausdrücklich benannten Variablen in \`~/.hermes/.env\`. Sie überschreibt nicht die übrige Hermes-Konfiguration.
+
+## MCP-Werkzeuge
+
+| Werkzeug | Zweck |
 |---|---|
-| kor_get_status | Programmversion, Datenbankstatus und Backup-Anzahl lesen |
-| kor_get_system_health | lokale Systemmetriken lesen |
-| kor_list_tasks | Aufgaben auflisten |
-| kor_list_projects | Projektübersicht mit optionalen Filtern lesen |
-| kor_list_records | Atlas-, Projekt-, Archiv-, Simulations- oder Datenbankeinträge lesen |
-| kor_list_resources | Ressourcenbestand lesen |
-| kor_list_news | lokal zwischengespeicherte RSS-Meldungen lesen |
+| \`kor_get_status\` | Programmversion, Datenbankstatus und Backup-Anzahl |
+| \`kor_get_system_health\` | lokale Systemmetriken |
+| \`kor_list_tasks\` | Aufgaben |
+| \`kor_list_projects\` | Projektübersicht mit Region-, Status- oder ID-Filter |
+| \`kor_list_records\` | Atlas-, Projekt-, Archiv-, Simulations- und Datenbankeinträge |
+| \`kor_list_resources\` | Ressourcenbestand |
+| \`kor_list_news\` | lokal zwischengespeicherte RSS-Meldungen, ohne Feed-Refresh |
 
 ## Installation
 
-Voraussetzungen: Python 3.11 oder neuer sowie eine laufende lokale KOR-NEXUS-Installation. Die Hermes-MCP-Abhängigkeit wird in einer eigenen virtuellen Umgebung installiert, nicht in der KOR-NEXUS- oder Hermes-Python-Umgebung.
+Voraussetzungen: KOR-NEXUS auf demselben Benutzerkonto, Hermes Agent mit Gateway und Python 3.11 oder neuer.
 
-Aus dem Repository- oder Installationsordner ausführen:
+Aus dem Repository- oder installierten KOR-NEXUS-App-Ordner ausführen:
 
     bash integrations/hermes/setup.sh
 
-Das Setup installiert mcp>=2,<3 in einer isolierten Umgebung und gibt den erforderlichen mcp_servers-Konfigurationsblock aus. Es bearbeitet ~/.hermes/config.yaml absichtlich nicht automatisch. Den ausgegebenen Block unter mcp_servers: in diese Datei eintragen und anschließend das Hermes Gateway neu starten.
+Das Skript:
 
-Wenn KOR-NEXUS per Benutzerinstallation eingerichtet wurde, verwendet das Setup automatisch den installierten App-Ordner unter ~/.local/share/kor-workstation-app, sofern dessen Integrationsdatei vorhanden ist. Bei abweichendem XDG_DATA_HOME wird dieses Verzeichnis verwendet. Mit KOR_NEXUS_APP_ROOT=/absoluter/pfad kann der App-Ordner explizit festgelegt werden.
+- richtet eine eigene Python-Umgebung für den MCP-Server ein;
+- erzeugt oder erhält den privaten Bridge-Token;
+- trägt die Bridge-Variablen geschützt in \`~/.hermes/.env\` ein;
+- installiert das optionale Hermes-Plattformplugin unter \`~/.hermes/plugins/kor-nexus\`;
+- gibt die benötigten YAML-Blöcke für \`gateway.platforms.kor_nexus\` und \`mcp_servers.kor_nexus\` aus.
+
+Die Skript-Ausgabe enthält die absoluten Pfade für dein System. Ergänze beide YAML-Blöcke in \`~/.hermes/config.yaml\`; das Skript verändert diese Datei absichtlich nicht automatisch. Starte zuerst KOR-NEXUS und danach das Hermes Gateway neu:
+
+    hermes gateway restart
+
+Anschließend ist **⌘ HERMES** in KOR-NEXUS der lokale Gesprächseinstieg.
 
 ## Diagnose
 
-Nach dem Setup die vom Setup ausgegebene Python- und doctor.py-Adresse ausführen. Die Diagnose gibt nur Verbindungsstatus und freigegebene Statusdaten aus, keine lokalen Datenverzeichnispfade.
+Die Ausgabe von \`setup.sh\` enthält den Aufruf für:
+
+    <MCP-VENV>/bin/python <KOR-NEXUS-APP>/integrations/hermes/doctor.py
+
+Die Diagnose meldet Verbindung und freigegebene Statusdaten, nicht den lokalen Datenbankpfad.
 
 ## Tests
 
-Die normalen KOR-NEXUS-Tests benötigen keine MCP-Abhängigkeit:
+Die clientseitigen Sicherheits- und API-Tests benötigen kein MCP-Paket:
 
     python3 -m unittest -v tests.test_hermes_mcp_client
 
-Die MCP-Protokolltests benötigen die isolierte Entwicklungsabhängigkeit:
+Die MCP-Protokolltests benötigen die optionale Abhängigkeit:
 
     python3 -m pip install -r integrations/hermes/requirements.txt
     PYTHONPATH=. python3 -m unittest discover -s integrations/hermes/tests -v
 
-## Noch nicht enthalten
+Die HTTP-Warteschlange und Tokenprüfung werden zusätzlich durch \`core.test_server\` getestet. Der isolierte Hermes-CI-Workflow prüft MCP-Registrierung, Python-Syntax und Setup-Skript; die allgemeine Release-Pipeline führt die Kern-API-Tests sowie die Installations- und Paketprüfungen aus.
 
-Diese Phase integriert noch kein Chatfenster in das KOR-HUD und registriert noch keinen Hermes-Platform-Adapter. Sie bildet die sichere, lesende Datenschnittstelle. Das HUD/Platform-Plugin und kontrollierte Schreibwerkzeuge folgen als separate Phasen, damit Hermes-Version, Sitzungszuordnung und Bestätigungsabläufe gezielt getestet werden können.
+## Bewusste Grenzen der ersten Ausbaustufe
+
+- Hermes kann KOR-NEXUS-Daten zunächst nur lesen. Schreibende Aktionen in Aufgaben, Projekten oder Archiv benötigen später jeweils eigene validierte API-Funktionen und klare Bestätigungsschritte.
+- KOR-NEXUS ist ein zusätzlicher Hermes-Kanal. Es spiegelt nicht automatisch jede eingehende Telegram-/WhatsApp-/Discord-Nachricht in die lokale KOR-NEXUS-Oberfläche.
+- Die Chat-Warteschlange ist lokal und nicht für mehrere Rechner oder Benutzer ausgelegt.
