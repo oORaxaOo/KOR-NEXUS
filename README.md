@@ -27,6 +27,25 @@ Für eine benutzerspezifische Installation mit Anwendungsmenü:
 
 Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
 
+## Hermes Agent — lokaler Chat-Kanal und MCP-Werkzeuge
+
+KOR-NEXUS kann optional mit Hermes Agent verbunden werden. Die Integration besteht aus zwei getrennten Teilen:
+
+- **Hermes Chat-Kanal:** Unter **⌘ HERMES** öffnet sich ein lokaler Gesprächsbereich. Eingaben laufen durch das reguläre Hermes Gateway und Antworten kehren in dieselbe lokale Unterhaltung zurück.
+- **MCP-Werkzeuge:** Hermes kann Aufgaben, Projekte, Archiv-/Atlas-Datensätze, Ressourcen, Status und lokal gespeicherte RSS-Meldungen lesen. Die Werkzeuge schreiben nicht in die KOR-NEXUS-Datenbank.
+
+Die Plattformintegration ist ein zusätzlicher Hermes-Kanal. Bestehende Telegram-, WhatsApp-, Discord- und andere Hermes-Verbindungen bleiben eigenständig und werden nicht ersetzt oder automatisch zu einem gemeinsamen Chatverlauf zusammengeführt.
+
+Einrichtung nach der Benutzerinstallation:
+
+\`\`\`bash
+bash integrations/hermes/setup.sh
+\`\`\`
+
+Das Skript richtet eine isolierte MCP-Python-Umgebung ein, installiert das Hermes-Plattformplugin in \`~/.hermes/plugins/kor-nexus\` und erzeugt einen privaten Bridge-Token. Die ausgegebenen YAML-Blöcke werden manuell in \`~/.hermes/config.yaml\` ergänzt; bestehende Einstellungen werden nicht überschrieben. Danach KOR-NEXUS starten und das Hermes Gateway neu starten. Details und Sicherheitsgrenzen: \`integrations/hermes/README.md\`.
+
+Die Brücke bleibt auf Loopback beschränkt. Der private Token wird mit Dateirechten \`0600\` gespeichert; MCP liest ausschließlich über die KOR-NEXUS-API und erhält keinen direkten SQLite- oder Shell-Zugriff.
+
 ## Historische technische Änderungen
 
 ## Entwicklungsstand 1.11.0 — Live-RSS und Quellenprüfung
