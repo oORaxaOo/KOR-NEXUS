@@ -21,7 +21,7 @@ BIN="$HOME/.local/bin/kor-workstation"
 STOP="$HOME/.local/bin/kor-workstation-stop"
 DESKTOP="$XDG_DATA_HOME/applications/kor-workstation.desktop"
 [[ -x "$BIN" && -x "$STOP" && -s "$DESKTOP" ]]
-[[ -s "$XDG_DATA_HOME/kor-workstation-app/core/engine.py" && -s "$XDG_DATA_HOME/kor-workstation-app/core/ai_provider.py" && -s "$XDG_DATA_HOME/kor-workstation-app/scripts/setup-local-ai.sh" ]]
+[[ -s "$XDG_DATA_HOME/kor-workstation-app/core/engine.py" && -s "$XDG_DATA_HOME/kor-workstation-app/core/ai_provider.py" && -s "$XDG_DATA_HOME/kor-workstation-app/core/hermes_bridge.py" && -s "$XDG_DATA_HOME/kor-workstation-app/web/lilith.js" && -s "$XDG_DATA_HOME/kor-workstation-app/web/lilith.css" && -s "$XDG_DATA_HOME/kor-workstation-app/integrations/hermes/install.sh" && -s "$XDG_DATA_HOME/kor-workstation-app/integrations/hermes/platform_plugin/adapter.py" && -s "$XDG_DATA_HOME/kor-workstation-app/scripts/setup-local-ai.sh" ]]
 grep -F 'Exec="' "$DESKTOP" >/dev/null
 # Occupy the preferred port when possible, to exercise the automatic fallback.
 cat > "$TMP/hold-port.py" <<'PYPORT'
