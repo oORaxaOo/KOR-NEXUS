@@ -38,7 +38,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_HTTP = urllib.request.build_opener(_NoRedirect())
+_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
 
 def _default_data_home() -> Path:
