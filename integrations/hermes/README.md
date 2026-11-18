@@ -7,7 +7,7 @@ Diese optionale Integration verbindet Hermes Agent über einen eigenständigen M
 - MCP verwendet stdio. Hermes startet den Server als Kindprozess; es wird kein zusätzlicher Netzwerkport geöffnet.
 - Der Adapter spricht ausschließlich mit der lokalen KOR-NEXUS-HTTP-API.
 - Der Adapter öffnet niemals die SQLite-Datenbank, liest keine Backups und besitzt keine Shell- oder Dateisystemwerkzeuge.
-- Phase I stellt ausschließlich lesende GET-Werkzeuge bereit. POST, PATCH, DELETE und PUT werden bereits im API-Client abgewiesen.
+- Die MCP-Schnittstelle stellt Lesezugriffe sowie klar begrenzte Erstellung/Bearbeitung von Aufgaben und strukturierten Einträgen bereit. Der API-Client erlaubt POST ausschließlich für `/api/tasks` und `/api/records`, PATCH ausschließlich für konkrete Aufgaben- und Eintrags-IDs. DELETE, PUT, Import, Restore, Ressourcenänderungen und Shell-Zugriffe sind nicht freigegeben.
 - Inhalte aus KOR-NEXUS sind Daten und dürfen keine System- oder Toolrichtlinien überschreiben.
 - Der Installer bearbeitet die Hermes-Konfiguration nicht automatisch.
 
@@ -36,7 +36,7 @@ Anschließend:
 
 Danach eine neue Hermes-Sitzung öffnen oder /reload-mcp verwenden.
 
-## Verfügbare Werkzeuge (read-only, Phase I)
+## Verfügbare Werkzeuge
 
 | Werkzeug | Zweck |
 |---|---|
@@ -48,8 +48,12 @@ Danach eine neue Hermes-Sitzung öffnen oder /reload-mcp verwenden.
 | kor_get_alerts | Engine-Warnmeldungen abrufen |
 | kor_get_dashboard | Regionale Projektübersicht abrufen |
 | kor_get_events | Ereignisse ab einem Journal-Cursor abrufen |
+| kor_create_task | Aufgabe mit Titel, Bereich, Priorität und optionalem Fälligkeitsdatum anlegen |
+| kor_update_task | Bestimmte Aufgabenfelder bearbeiten oder Aufgabe abschließen |
+| kor_create_record | Eintrag in Atlas, Projekte, Archiv, Simulation oder Datenbank erstellen |
+| kor_update_record | Bestehenden Eintrag anhand seiner ID bearbeiten |
 
-Listenwerkzeuge liefern höchstens 200 Einträge; Ereignisabfragen höchstens 500 Ereignisse.
+Listenwerkzeuge liefern höchstens 200 Einträge; Ereignisabfragen höchstens 500 Ereignisse. Schreibwerkzeuge können ausschließlich Aufgaben und strukturierte Einträge anlegen oder bearbeiten. Es gibt keine Löschfunktion und keine Werkzeuge zum Import, Restore, direkten SQL-Zugriff oder zur Änderung von Ressourcenbeständen.
 
 ## Fehlerbehebung
 
@@ -109,7 +113,7 @@ Der Browser kommuniziert nur mit der bestehenden KOR-NEXUS-API. Er erhält weder
 ### Betriebsgrenzen der ersten Hybrid-Version
 
 - KOR-NEXUS bleibt ohne Hermes voll funktionsfähig.
-- Das MCP-Toolset ist read-only. Es greift nur über die KOR-NEXUS-API zu und kann keine Datenbankänderungen ausführen.
+- Das MCP-Toolset liest Daten und darf ausschließlich Aufgaben sowie strukturierte Einträge über streng begrenzte KOR-NEXUS-API-Routen anlegen oder bearbeiten. Es kann weder löschen noch Bestände oder Sicherheits-/Backupeinstellungen verändern.
 - Der Platform-Adapter leitet Chatnachrichten an Hermes weiter. Er führt selbst keine KOR-NEXUS-Datenbankoperationen aus.
 - Die aktuelle Event-Journal-Funktion kann von Lilith abgefragt werden (kor_get_events). Automatische Push-Benachrichtigungen aus KOR-NEXUS an WhatsApp/HUD sind noch nicht aktiviert.
 - Kritische KOR-Aktionen bleiben den vorhandenen Bestätigungsmechanismen der Core Engine unterworfen.
