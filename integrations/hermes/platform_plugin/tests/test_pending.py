@@ -44,7 +44,7 @@ def install_minimal_hermes_stubs():
         def build_source(self, **values):
             return types.SimpleNamespace(**values)
 
-        def handle_message(self, message_event):
+        async def handle_message(self, message_event):
             message_event._gateway_accepted = True
 
         def _mark_connected(self, **_kwargs):
