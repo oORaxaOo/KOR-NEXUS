@@ -90,6 +90,10 @@ class ClientTests(unittest.TestCase):
         with self.assertRaises(KorApiError):
             self.client.request("POST", "/api/restore", {})
         with self.assertRaises(KorApiError):
+            self.client.request("POST", "/api/tasks", {"title": "x", "execute_shell": "no"})
+        with self.assertRaises(KorApiError):
+            self.client.request("PATCH", "/api/tasks/1", {"delete_database": True})
+        with self.assertRaises(KorApiError):
             self.client.request("PATCH", "/api/actions/proposals/1/execute", {})
         for method in ("DELETE", "PUT"):
             with self.subTest(method=method), self.assertRaises(KorApiError):
