@@ -33,10 +33,10 @@ if 'integrations/hermes/plugin/adapter.py' not in Path('PKGBUILD').read_text(): 
 if './hermes.html' not in html: raise SystemExit('FEHLER: Hermes-Chat ist nicht im HUD verlinkt')
 hermes_html=Path('web/hermes.html').read_text()
 if './js/hermes.js' not in hermes_html: raise SystemExit('FEHLER: Hermes-Chat-Skript nicht eingebunden')
-for element_id in ('hermesStatus','hermesMessages','hermesComposer','hermesInput','hermesSend'):
+for element_id in ('hermesConnection','hermesMessages','hermesComposer','hermesInput','hermesSend'):
     if f'id="{element_id}"' not in hermes_html: raise SystemExit(f'FEHLER: Hermes-Chat-Element fehlt: {element_id}')
 hermes_js=Path('web/js/hermes.js').read_text()
-if "fetch('/api'+path" in hermes_js: raise SystemExit('FEHLER: Hermes-Chat muss seine API-Aufrufe relativ und lokal halten')
+if '/hermes/status' not in hermes_js or '/hermes/messages' not in hermes_js: raise SystemExit('FEHLER: Hermes-Chat nutzt nicht seine lokalen API-Endpunkte')
 if 'textContent' not in hermes_js: raise SystemExit('FEHLER: Hermes-Chat muss Nachrichten sicher als Text rendern')
 github_html=Path('web/github.html').read_text()
 if './js/github-center.js' not in github_html: raise SystemExit('FEHLER: GitHub-UI-Skript nicht eingebunden')
