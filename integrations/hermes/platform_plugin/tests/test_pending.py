@@ -88,7 +88,7 @@ def install_minimal_hermes_stubs():
 
 install_minimal_hermes_stubs()
 from gateway.config import PlatformConfig
-from adapter import KORNexusAdapter
+from adapter import KORNexusAdapter, ProcessingOutcome
 
 
 class PendingReplyTests(unittest.TestCase):
@@ -126,7 +126,7 @@ class PendingReplyTests(unittest.TestCase):
         future = Future()
         self.adapter._pending = {"message-id": future}
         event = types.SimpleNamespace(message_id="message-id", _streamed_final_response="Lilith-Antwort")
-        asyncio.run(self.adapter.on_processing_complete(event, types.SimpleNamespace(SUCCESS="success").SUCCESS))
+        asyncio.run(self.adapter.on_processing_complete(event, ProcessingOutcome.SUCCESS))
         self.assertEqual(future.result(), "Lilith-Antwort")
 
     def test_bridge_binds_loopback_and_requires_private_token(self):
