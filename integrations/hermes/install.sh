@@ -55,7 +55,7 @@ PY
 # Install the native Gateway platform plugin alongside the MCP tools.
 mkdir -p "$PLUGIN_TARGET"
 cp -a "$PLATFORM_SOURCE/." "$PLUGIN_TARGET/"
-chmod 700 "$HERMES_HOME" "$HERMES_HOME/plugins" "$PLUGIN_TARGET" 2>/dev/null || true
+chmod 700 "$HERMES_HOME/plugins" "$PLUGIN_TARGET" 2>/dev/null || true
 
 cat > "$TARGET/hermes-platform-config.yaml" <<'YAML'
 gateway:
