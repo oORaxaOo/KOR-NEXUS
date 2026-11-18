@@ -26,10 +26,11 @@ for file,pattern in checks.items():
  if file=='core/test_server.py' and text.count(v)<2: raise SystemExit('FEHLER: API-Test-Fixtures enthalten uneinheitliche Versionsangaben')
 print(f'OK Versionskonsistenz: {v}')
 PY
-python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py
-bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/setup-local-ai.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh
+python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py integrations/hermes/mcp_server/tests/test_kor_client.py
+bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/setup-local-ai.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh integrations/hermes/install.sh
 if command -v node >/dev/null 2>&1; then node --check web/app.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
 bash scripts/verify-source.sh
+PYTHONPATH=integrations/hermes/mcp_server python3 -m unittest discover -s integrations/hermes/mcp_server/tests -v
 # Validate the file set required by PKGBUILD before packaging.
 python3 - <<'PYFILES'
 from pathlib import Path
