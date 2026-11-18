@@ -553,4 +553,51 @@ class CoreApiTests(unittest.TestCase):
         self.assertIn('nicht installiert', data['error'])
         popen.assert_not_called()
 
+    def test_hermes_bridge_requires_token_and_relays_messages(self):
+        token_file=app.DATA_HOME/'hermes-bridge-token'
+        token_file.write_text('unit-test-private-token\n',encoding='utf-8')
+        token_file.chmod(0o600)
+        headers={'Authorization':'Bearer unit-test-private-token'}
+
+        # The browser-side local API queues messages without exposing the private token.
+        status,queued=self.req('/api/hermes/messages','POST',{
+            'conversation_id':'main','content':'Statusbericht, bitte.','sender_name':'Corvus'
+        })
+        self.assertEqual(status,201)
+        self.assertEqual(queued['status'],'queued')
+
+        # No token or a wrong token must not expose the MCP/platform bridge.
+        self.assertEqual(self.req('/api/hermes/bridge/status')[0],401)
+        self.assertEqual(self.req('/api/hermes/bridge/inbox',headers={
+            'Authorization':'Bearer wrong-token'
+        })[0],401)
+
+        status,batch=self.req('/api/hermes/bridge/inbox?limit=10',headers=headers)
+        self.assertEqual(status,200)
+        self.assertEqual(batch['count'],1)
+        self.assertEqual(batch['items'][0]['content'],'Statusbericht, bitte.')
+        self.assertEqual(batch['items'][0]['sender_name'],'Corvus')
+
+        # Hermes replies are persisted in the same local conversation.
+        status,reply=self.req('/api/hermes/bridge/replies','POST',{
+            'conversation_id':'main','content':'Verstanden. Ich prüfe die Lage.'
+        },headers=headers)
+        self.assertEqual(status,201)
+        self.assertTrue(reply['id'])
+
+        status,messages=self.req('/api/hermes/messages?conversation_id=main')
+        self.assertEqual(status,200)
+        self.assertEqual([item['direction'] for item in messages['items']],['user','assistant'])
+        self.assertEqual(messages['items'][1]['content'],'Verstanden. Ich prüfe die Lage.')
+
+        status,conversations=self.req('/api/hermes/conversations')
+        self.assertEqual(status,200)
+        self.assertEqual(conversations['items'][0]['conversation_id'],'main')
+        self.assertEqual(conversations['items'][0]['message_count'],2)
+
+        status,bridge=self.req('/api/hermes/status')
+        self.assertEqual(status,200)
+        self.assertTrue(bridge['configured'])
+        self.assertTrue(bridge['connected'])
+
 if __name__=='__main__':unittest.main()
