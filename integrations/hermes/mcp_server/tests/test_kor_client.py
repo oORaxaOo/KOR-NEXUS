@@ -84,6 +84,10 @@ class ClientTests(unittest.TestCase):
         with self.assertRaises(KorApiError):
             self.client.request("GET", "/etc/passwd")
         with self.assertRaises(KorApiError):
+            self.client.request("GET", "/api/export")
+        with self.assertRaises(KorApiError):
+            self.client.request("GET", "/api/backups")
+        with self.assertRaises(KorApiError):
             self.client.request("POST", "/api/restore", {})
         with self.assertRaises(KorApiError):
             self.client.request("PATCH", "/api/actions/proposals/1/execute", {})
