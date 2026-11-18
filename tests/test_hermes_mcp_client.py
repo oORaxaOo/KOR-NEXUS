@@ -79,6 +79,20 @@ class KorNexusClientTests(unittest.TestCase):
         self.thread.join(timeout=2)
         self.temp.cleanup()
 
+    def test_loopback_client_ignores_environment_http_proxies(self):
+        with patch.dict("os.environ", {
+            "HTTP_PROXY": "http://127.0.0.1:1",
+            "http_proxy": "http://127.0.0.1:1",
+            "HTTPS_PROXY": "http://127.0.0.1:1",
+            "https_proxy": "http://127.0.0.1:1",
+            "NO_PROXY": "",
+            "no_proxy": "",
+        }):
+            client = KorNexusClient(self.base_url, data_home=self.data_home)
+            result = client.get_status()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["app"], "KOR-NEXUS")
+
     def test_refuses_non_loopback_and_non_http_urls(self):
         for url in (
             "https://127.0.0.1:8765",
