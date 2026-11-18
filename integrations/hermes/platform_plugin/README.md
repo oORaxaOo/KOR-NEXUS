@@ -12,7 +12,7 @@ This plugin exposes the KOR-NEXUS local HUD as a native Hermes Gateway platform.
 
 ## Enable in Hermes
 
-Copy this plugin into ~/.hermes/plugins/kor-nexus-panel/, then add the following under the existing gateway.platforms section in ~/.hermes/config.yaml:
+Install this plugin in ~/.hermes/plugins/kor-nexus-panel/ (the repository installer copies the complete package, including __init__.py), then enable it with `hermes plugins enable kor-nexus-panel`. Add the following under the existing gateway.platforms section in ~/.hermes/config.yaml:
 
     kor_nexus:
       enabled: true
