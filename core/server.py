@@ -9,9 +9,11 @@ from xml.etree import ElementTree as ET
 if __package__:
     from .ai_provider import AIUnavailableError, configured_ai_provider
     from .engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
+    from .hermes_bridge import HermesBridgeError, bridge_status, send_to_hermes
 else:
     from ai_provider import AIUnavailableError, configured_ai_provider
     from engine import build_engine_status, evaluate_engine, run_automations, run_due_scheduled_jobs
+    from hermes_bridge import HermesBridgeError, bridge_status, send_to_hermes
 
 AI_PROVIDER = configured_ai_provider()
 
@@ -1195,6 +1197,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     if status_filter=='all': rows=[proposal_dict(r) for r in con.execute('SELECT * FROM action_proposals ORDER BY created_at DESC,id DESC LIMIT 500')]
                     else: rows=[proposal_dict(r) for r in con.execute('SELECT * FROM action_proposals WHERE status=? ORDER BY created_at DESC,id DESC LIMIT 500',(status_filter,))]
                 return self.send_json({'items':rows,'count':len(rows),'status':status_filter})
+            if path=='/api/lilith/status':
+                return self.send_json(bridge_status())
             if path=='/api/engine/status':
                 with db_connect() as con: return self.send_json(build_engine_status(con,AI_PROVIDER.status()))
             if path=='/api/ai/status': return self.send_json(AI_PROVIDER.status())
@@ -1283,6 +1287,18 @@ class AppHandler(BaseHTTPRequestHandler):
         try:data=self.read_body()
         except ValueError as e:return self.fail(400,str(e))
         now=utcnow()
+        if path=='/api/lilith/message':
+            message=data.get('message')
+            session_id=data.get('session_id')
+            if not isinstance(message,str) or not message.strip() or len(message)>12000:
+                return self.fail(400,'Nachricht muss zwischen 1 und 12.000 Zeichen enthalten.')
+            if not isinstance(session_id,str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}',session_id):
+                return self.fail(400,'Ungültige Lilith-Sitzung.')
+            try:
+                response=send_to_hermes(message,session_id)
+            except HermesBridgeError as exc:
+                return self.fail(503,str(exc))
+            return self.send_json({'ok':True,'response':response})
         if path=='/api/ai/generate':
             prompt=data.get('prompt')
             context=data.get('context')
