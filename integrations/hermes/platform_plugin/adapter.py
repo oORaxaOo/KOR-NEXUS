@@ -26,7 +26,7 @@ from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
 logger = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9876
-MAX_BODY_BYTES = 16 * 1024
+MAX_BODY_BYTES = 64 * 1024
 MAX_MESSAGE_CHARS = 12_000
 MAX_PENDING_REQUESTS = 8
 DEFAULT_REPLY_TIMEOUT = 240.0
