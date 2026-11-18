@@ -95,6 +95,10 @@ Diesen Abschnitt in den bestehenden gateway.platforms-Block der ~/.hermes/config
 
 Die Plattform nutzt eine explizite Hermes-Allowlist für die feste lokale Identität `local-owner`. Der Adapter erklärt eingehende Nachrichten ausdrücklich **nicht** zu vertrauenswürdigen Upstream-Nachrichten und umgeht damit keine normalen Gateway-Autorisierungsprüfungen. Die Liste muss auf `local-owner` beschränkt bleiben; keine Wildcards oder globale Freigabe eintragen.
 
+Das installierte User-Plugin zusätzlich aktivieren:
+
+    hermes plugins enable kor-nexus-panel
+
 Anschließend das Hermes-Gateway neu starten. Beim erfolgreichen Start erzeugt das Plugin eine private Verbindungsdatei unter $XDG_CONFIG_HOME/kor-nexus/hermes-bridge.json (Standard: ~/.config/kor-nexus/hermes-bridge.json). Sie enthält ein zufälliges Zugriffstoken und wird mit Dateirechten 0600 geschrieben. Das Verzeichnis wird auf 0700 gesetzt. KOR-NEXUS liest diese Datei serverseitig; das Token wird niemals an den Browser ausgeliefert.
 
 Hermes und KOR-NEXUS müssen dasselbe HOME/XDG_CONFIG_HOME verwenden. Bei abweichender Konfiguration kann KOR_NEXUS_HERMES_CONFIG auf beiden Prozessen auf denselben privaten Dateipfad gesetzt werden.
@@ -120,7 +124,7 @@ Der Browser kommuniziert nur mit der bestehenden KOR-NEXUS-API. Er erhält weder
 
 ### Diagnose
 
-- Hermes Plugin prüfen: hermes plugins list
+- Hermes Plugin prüfen: hermes plugins list (Plugin muss als aktiviert erscheinen)
 - MCP-Verbindung prüfen: hermes mcp test kor_nexus
 - KOR-NEXUS-Verbindungsstatus: GET /api/lilith/status
 - KOR-NEXUS-Chat: POST /api/lilith/message mit JSON-Feldern session_id und message
