@@ -85,7 +85,7 @@ def _remove_runtime_config(token: str) -> None:
 
 class _HTTPServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = False
+    allow_reuse_address = True
 
 
 class _RequestHandler(BaseHTTPRequestHandler):
@@ -197,10 +197,17 @@ class KORNexusAdapter(BasePlatformAdapter):
         self._loop = asyncio.get_running_loop()
         try:
             self._httpd = _HTTPServer((DEFAULT_HOST, self._port), _RequestHandler)
-            self._httpd.adapter = self
         except OSError as exc:
-            self._set_fatal_error("bind_failed", f"KOR-NEXUS bridge could not bind: {exc}", retryable=True)
-            return False
+            if self._port == 0:
+                self._set_fatal_error("bind_failed", f"KOR-NEXUS bridge could not bind: {exc}", retryable=True)
+                return False
+            logger.warning("[kor_nexus] configured port %d is unavailable; falling back to an OS-assigned loopback port: %s", self._port, exc)
+            try:
+                self._httpd = _HTTPServer((DEFAULT_HOST, 0), _RequestHandler)
+            except OSError as fallback_exc:
+                self._set_fatal_error("bind_failed", f"KOR-NEXUS bridge could not bind: {fallback_exc}", retryable=True)
+                return False
+        self._httpd.adapter = self
         bound_port = int(self._httpd.server_address[1])
         try:
             _write_runtime_config(self._bridge_token, bound_port)
