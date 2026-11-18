@@ -193,11 +193,6 @@ class KORNexusAdapter(BasePlatformAdapter):
     def name(self) -> str:
         return "KOR-NEXUS"
 
-    @property
-    def authorization_is_upstream(self) -> bool:
-        # The bridge validates its owner-only high-entropy token before admitting an event.
-        return True
-
     async def connect(self, *, is_reconnect: bool = False) -> bool:
         self._loop = asyncio.get_running_loop()
         try:
@@ -270,7 +265,8 @@ class KORNexusAdapter(BasePlatformAdapter):
             return False
 
     async def _dispatch(self, event: MessageEvent) -> None:
-        await self.handle_message(event)
+        # BasePlatformAdapter.handle_message is synchronous and schedules GatewayRunner work.
+        self.handle_message(event)
 
     def submit_message(self, session_id: str, text: str) -> str:
         if self._loop is None or not self._running:
@@ -331,7 +327,7 @@ class KORNexusAdapter(BasePlatformAdapter):
             self._resolve_message(message_id, "Lilith konnte die Anfrage nicht abschließen. Bitte Gateway-Protokoll prüfen.")
         elif outcome is ProcessingOutcome.CANCELLED:
             self._resolve_message(message_id, "Die Anfrage wurde abgebrochen.")
-        else:
+        elif outcome is ProcessingOutcome.SUCCESS:
             streamed = getattr(event, "_streamed_final_response", "")
             if isinstance(streamed, str) and streamed:
                 self._resolve_message(message_id, streamed)
@@ -358,6 +354,7 @@ def register(ctx):
         validate_config=validate_config,
         required_env=[],
         max_message_length=MAX_MESSAGE_CHARS,
+        allowed_users_env="KOR_NEXUS_ALLOWED_USERS",
         platform_hint="You are replying inside the private local KOR-NEXUS command workspace. Use the KOR-NEXUS tools when structured project or task data is needed.",
         emoji="🧠",
     )
