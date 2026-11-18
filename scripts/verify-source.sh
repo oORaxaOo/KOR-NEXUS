@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 command -v python3 >/dev/null 2>&1 || { echo 'Fehler: Python 3 fehlt.' >&2; exit 2; }
-python3 -m py_compile core/server.py core/window.py core/test_server.py core/mesh.py core/simulation.py core/media.py core/github_integration.py tests/test_github_integration.py scripts/import-bkg-data.py scripts/test-advanced-features.py
+python3 -m py_compile core/server.py core/window.py core/test_server.py core/mesh.py core/simulation.py core/media.py core/github_integration.py tests/test_github_integration.py tests/test_hermes_mcp_client.py tests/test_hermes_plugin_contract.py integrations/__init__.py integrations/hermes/__init__.py integrations/hermes/kor_client.py integrations/hermes/mcp_server.py integrations/hermes/doctor.py integrations/hermes/plugin/adapter.py scripts/import-bkg-data.py scripts/test-advanced-features.py
 python3 scripts/test-advanced-features.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 printf 'OK  Python-Syntax und Kernmodule\n'
 python3 - <<'PY'
 import json
 from pathlib import Path
-required=['core/__init__.py','core/server.py','core/window.py','core/test_server.py','core/mesh.py','core/simulation.py','core/media.py','core/github_integration.py','tests/test_github_integration.py','tests/test_code_workbench.py','scripts/import-bkg-data.py','scripts/test-advanced-features.py','web/js/hud-alerts.js','web/js/hud.js','web/js/media-hub.js','org.oORaxaOo.KorNexus.json','flatpak/launch.sh','flatpak/org.oORaxaOo.KorNexus.desktop','KDE_PLASMA_HUD.md','web/index.html','web/github.html','web/code.html','web/styles.css','web/app.js','web/js/github-center.js','web/geodata/world.geojson','GITHUB_CENTER.md','launch.sh','stop.sh','install-user.sh','uninstall-user.sh','packaging/kor-workstation.desktop','packaging/kor-workstation-launcher.sh','packaging/kor-workstation-stop.sh','packaging/icons/kor-workstation.svg','scripts/build-arch-package.sh','scripts/test-installation.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','PKGBUILD','README.md','EXPORT_SCHEMA.md','CHANGELOG.md','DECISIONS.md','PROJECT_STATUS.md']
+required=[
+'integrations/__init__.py','integrations/hermes/__init__.py','integrations/hermes/kor_client.py',
+'integrations/hermes/mcp_server.py','integrations/hermes/doctor.py','integrations/hermes/requirements.txt',
+'integrations/hermes/setup.sh','integrations/hermes/README.md','integrations/hermes/tests/test_mcp_server.py','integrations/hermes/plugin/__init__.py','integrations/hermes/plugin/adapter.py','integrations/hermes/plugin/plugin.yaml','integrations/hermes/plugin/README.md',
+'tests/test_hermes_mcp_client.py','tests/test_hermes_plugin_contract.py',
+'core/__init__.py','core/server.py','core/window.py','core/test_server.py','core/mesh.py','core/simulation.py','core/media.py','core/github_integration.py','tests/test_github_integration.py','tests/test_code_workbench.py','scripts/import-bkg-data.py','scripts/test-advanced-features.py','web/js/hud-alerts.js','web/js/hud.js','web/js/media-hub.js','org.oORaxaOo.KorNexus.json','flatpak/launch.sh','flatpak/org.oORaxaOo.KorNexus.desktop','KDE_PLASMA_HUD.md','web/index.html','web/github.html','web/code.html','web/hermes.html','web/styles.css','web/app.js','web/js/github-center.js','web/js/hermes.js','web/geodata/world.geojson','GITHUB_CENTER.md','launch.sh','stop.sh','install-user.sh','uninstall-user.sh','packaging/kor-workstation.desktop','packaging/kor-workstation-launcher.sh','packaging/kor-workstation-stop.sh','packaging/icons/kor-workstation.svg','scripts/build-arch-package.sh','scripts/test-installation.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','PKGBUILD','README.md','EXPORT_SCHEMA.md','CHANGELOG.md','DECISIONS.md','PROJECT_STATUS.md']
 for name in required:
     p=Path(name)
     if not p.is_file() or p.stat().st_size==0: raise SystemExit(f'FEHLER: Datei fehlt/leer: {name}')
@@ -23,10 +28,23 @@ code_html=Path('web/code.html').read_text()
 if "api('/ide/status')" not in code_html or "api('/ide/start'," not in code_html: raise SystemExit('FEHLER: Code Workbench API-Anbindung fehlt')
 if "127.0.0.1" not in Path('core/server.py').read_text(): raise SystemExit('FEHLER: lokaler Loopback-Bind der Code-IDE fehlt')
 if 'web/code.html' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: Code Workbench fehlt im Arch-Paket')
+if 'web/hermes.html' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: Hermes-Chat fehlt im Arch-Paket')
+if 'integrations/hermes/plugin/adapter.py' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: Hermes-Plattformplugin fehlt im Arch-Paket')
+if './hermes.html' not in html: raise SystemExit('FEHLER: Hermes-Chat ist nicht im HUD verlinkt')
+hermes_html=Path('web/hermes.html').read_text()
+if './js/hermes.js' not in hermes_html: raise SystemExit('FEHLER: Hermes-Chat-Skript nicht eingebunden')
+for element_id in ('hermesConnection','hermesMessages','hermesComposer','hermesInput','hermesSend'):
+    if f'id="{element_id}"' not in hermes_html: raise SystemExit(f'FEHLER: Hermes-Chat-Element fehlt: {element_id}')
+hermes_js=Path('web/js/hermes.js').read_text()
+if '/hermes/status' not in hermes_js or '/hermes/messages' not in hermes_js: raise SystemExit('FEHLER: Hermes-Chat nutzt nicht seine lokalen API-Endpunkte')
+if 'textContent' not in hermes_js: raise SystemExit('FEHLER: Hermes-Chat muss Nachrichten sicher als Text rendern')
 github_html=Path('web/github.html').read_text()
 if './js/github-center.js' not in github_html: raise SystemExit('FEHLER: GitHub-UI-Skript nicht eingebunden')
 if 'core/github_integration.py' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: GitHub-Backend fehlt im Arch-Paket')
 if 'core/media.py' not in Path('PKGBUILD').read_text(): raise SystemExit('FEHLER: erforderliches Media-Kernmodul fehlt im Arch-Paket')
+pkg=Path('PKGBUILD').read_text()
+for required_path in ('integrations/hermes/mcp_server.py','integrations/hermes/kor_client.py','integrations/hermes/setup.sh'):
+    if required_path not in pkg: raise SystemExit(f'FEHLER: Hermes-Integration fehlt im Arch-Paket: {required_path}')
 manifest=json.loads(Path('org.oORaxaOo.KorNexus.json').read_text())
 if manifest.get('app-id')!='org.oORaxaOo.KorNexus' or not manifest.get('modules'): raise SystemExit('FEHLER: Flatpak-Manifest ungültig')
 for asset in ('./styles.css','./app.js'):
@@ -38,14 +56,14 @@ if not any((f.get('properties') or {}).get('iso_a3')=='DEU' for f in geo['featur
 print(f"OK  Offline-GeoJSON: {len(geo['features'])} Features, {Path('web/geodata/world.geojson').stat().st_size} Byte")
 print('OK  Lokale Frontend-Assets und API-Client')
 PY
-bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/release-check.sh scripts/ci.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh
+bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/release-check.sh scripts/ci.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh integrations/hermes/setup.sh
 python3 - <<'PY'
 from pathlib import Path
 import re
 p=Path('PKGBUILD').read_text()
 version=re.search(r"^VERSION\s*=\s*['\"]([^'\"]+)['\"]", Path('core/server.py').read_text(), re.M)
 if not version: raise SystemExit('FEHLER: Laufzeitversion fehlt')
-for x in ('pkgname=kor-workstation',f'pkgver={version.group(1)}','depends=(\'python\' \'python-pyqt6\' \'python-pyqt6-webengine\')','packaging/kor-workstation.desktop','kor-workstation-stop.sh','EXPORT_SCHEMA.md','CHANGELOG.md','GITHUB_CENTER.md','core/github_integration.py','web/github.html','web/js/github-center.js'):
+for x in ('pkgname=kor-workstation',f'pkgver={version.group(1)}',"depends=('python' 'python-pyqt6' 'python-pyqt6-webengine')",'packaging/kor-workstation.desktop','kor-workstation-stop.sh','EXPORT_SCHEMA.md','CHANGELOG.md','GITHUB_CENTER.md','core/github_integration.py','web/github.html','web/js/github-center.js','integrations/hermes/mcp_server.py'):
     if x not in p: raise SystemExit(f'FEHLER: Arch-Paketdefinition erwartet {x}')
-print('OK  Arch-Paketdefinition enthält die Python-Kernlaufzeit')
+print('OK  Arch-Paketdefinition enthält Python-Kernlaufzeit und optionale Hermes-Integration')
 PY

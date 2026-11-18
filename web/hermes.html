@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0f">
+<meta name="description" content="Lokaler Hermes-Kanal innerhalb der KOR-NEXUS Kommandozentrale.">
+<title>KOR-NEXUS // Hermes Command Channel</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+.hermes-page{max-width:1500px;margin:0 auto;padding:24px;display:grid;gap:18px}
+.hermes-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.hermes-head h1{margin:4px 0}.hermes-muted{color:#aab0b5}.hermes-status{display:flex;align-items:center;gap:9px;padding:10px 13px;background:#111518;border:1px solid #34393e;border-radius:8px;min-height:42px}
+.hermes-led{width:9px;height:9px;border-radius:50%;background:#8a6262;display:inline-block}.hermes-led.online{background:#d3b15e;box-shadow:0 0 12px #d3b15e88}
+.hermes-layout{display:grid;grid-template-columns:minmax(220px,.7fr) minmax(0,2fr);gap:16px;min-height:68vh}
+.gh-badge{font-size:12px;border:1px solid #565d65;border-radius:30px;padding:3px 8px;color:#ddd}.hermes-card{background:rgba(16,19,22,.96);border:1px solid #34393e;border-radius:12px;padding:16px;min-width:0}
+.hermes-conversations{display:grid;gap:8px;margin-top:12px}
+.hermes-conversation{display:block;width:100%;text-align:left;padding:11px;border:1px solid #34393e;border-radius:8px;background:#111518;color:inherit;cursor:pointer}
+.hermes-conversation.active{border-color:#d33b42;background:#211719}
+.hermes-conversation strong,.hermes-conversation small{display:block;overflow-wrap:anywhere}.hermes-conversation small{color:#aab0b5;margin-top:5px}
+.hermes-chat{display:grid;grid-template-rows:auto minmax(260px,1fr) auto;gap:12px;min-height:600px}
+.hermes-chat-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.hermes-messages{overflow:auto;display:flex;flex-direction:column;gap:10px;padding:8px;background:#0b0d0f;border:1px solid #2c3238;border-radius:9px;min-height:320px;max-height:62vh}
+.hermes-message{max-width:min(82%,780px);padding:10px 12px;border:1px solid #34393e;border-radius:9px;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.48}
+.hermes-message.user{align-self:flex-end;background:#211719;border-color:#704047}
+.hermes-message.assistant{align-self:flex-start;background:#14191d}
+.hermes-message.system{align-self:center;background:#171a1d;color:#abb1b7;font-size:13px}
+.hermes-message small{display:block;color:#9ca4ab;margin-top:7px;font-size:11px}
+.hermes-composer{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:end}
+.hermes-composer textarea{width:100%;min-height:78px;max-height:220px;resize:vertical;box-sizing:border-box;background:#0b0d0f;color:#f4f4f4;border:1px solid #42484f;border-radius:8px;padding:12px;font:inherit}
+.hermes-compose-note{grid-column:1/-1;color:#aab0b5;font-size:12px}
+.hermes-empty{color:#aab0b5;margin:auto;text-align:center;padding:20px}
+.hermes-notice{padding:10px 12px;border:1px solid #51473a;background:#171614;color:#e6d3a0;border-radius:8px;overflow-wrap:anywhere}
+.hermes-notice.error{border-color:#8a3c43;background:#211719;color:#ffb7bb}
+@media(max-width:850px){.hermes-page{padding:12px}.hermes-layout{grid-template-columns:1fr}.hermes-chat{min-height:560px}.hermes-messages{max-height:52vh}}
+</style>
+</head>
+<body>
+<header class="topbar">
+ <div class="brand"><div class="brand-mark"><span>K</span></div><div><div class="brand-title">KOR <b>WORKSTATION</b></div><div class="brand-sub">HERMES COMMAND CHANNEL <span>///</span> LOCAL-FIRST</div></div></div>
+ <div class="top-actions"><a class="btn ghost small" href="./index.html">← ZUR NEXUS-ZENTRALE</a><a class="btn ghost small" href="./github.html">⌘ GITHUB</a></div>
+</header>
+<main class="hermes-page">
+ <div class="hermes-head">
+  <div><div class="kicker">KOR-NEXUS / KI-KANAL</div><h1>HERMES<span class="period">.</span></h1><p class="hermes-muted">Lokaler Gesprächskanal zum Hermes Gateway. Die Antworten laufen durch deine normale Hermes-Konfiguration.</p></div>
+  <div class="hermes-status" role="status"><span id="hermesLed" class="hermes-led"></span><strong id="hermesConnection">BRÜCKE WIRD GEPRÜFT</strong><small id="hermesLastSeen" class="hermes-muted"></small></div>
+ </div>
+ <div id="hermesNotice" class="hermes-notice" role="status">KOR-NEXUS und das Hermes Gateway müssen laufen. Die erste Einrichtung erfolgt über integrations/hermes/setup.sh.</div>
+ <div class="hermes-layout">
+  <aside class="hermes-card">
+   <div class="panel-head"><div><div class="kicker">01 / KANÄLE</div><h2>Unterhaltungen</h2></div><span class="gh-badge" id="hermesConversationCount">—</span></div>
+   <button id="hermesNewConversation" class="btn ghost small" type="button">＋ NEUER KANAL</button>
+   <div id="hermesConversations" class="hermes-conversations"></div>
+   <p class="hermes-muted" style="font-size:12px;margin-top:16px">Jeder Kanal bildet eine eigene Hermes-Sitzung. Andere Hermes-Plattformen bleiben eigenständig und werden nicht überschrieben.</p>
+  </aside>
+  <section class="hermes-card hermes-chat">
+   <div class="hermes-chat-head"><div><div class="kicker">02 / LIVE-KOMMUNIKATION</div><h2 id="hermesChatTitle">Hauptkanal</h2></div><span id="hermesMessageCount" class="gh-badge">0 NACHRICHTEN</span></div>
+   <div id="hermesMessages" class="hermes-messages" aria-live="polite"><div class="hermes-empty">Warte auf die Verbindung zu Hermes …</div></div>
+   <form id="hermesComposer" class="hermes-composer">
+    <textarea id="hermesInput" maxlength="20000" placeholder="Nachricht an Hermes …" aria-label="Nachricht an Hermes"></textarea>
+    <button id="hermesSend" class="btn" type="submit">SENDEN ↗</button>
+    <div class="hermes-compose-note">Enter sendet · Shift+Enter erzeugt einen Zeilenumbruch · maximal 20.000 Zeichen</div>
+   </form>
+  </section>
+ </div>
+ <p class="hermes-muted">Sicherheitsmodell: lokale Loopback-Verbindung, privater Bridge-Token, getrennte MCP-Lesezugriffe. Keine LAN-Freigabe und kein direkter Datenbankzugriff durch Hermes.</p>
+</main>
+<script src="./js/hermes.js" defer></script>
+</body></html>

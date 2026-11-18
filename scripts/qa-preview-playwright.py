@@ -233,6 +233,61 @@ with sync_playwright() as p:
   clean.screenshot(path=str(MOBILE_SHOT),full_page=True)
   print('PASS: Mobilansicht ohne horizontales Seiten-Overflow, Fokusindikatoren und reduzierte Bewegung')
   clean.close()
+
+  # Exercise the dedicated Hermes page with a deterministic local API fake.
+  hermes_html_source=(ROOT/'web'/'hermes.html').read_text(encoding='utf-8')
+  hermes_js_source=(ROOT/'web'/'js'/'hermes.js').read_text(encoding='utf-8')
+  hermes_mock=r"""<script>
+  const __hermesRows=[{id:'m0',conversation_id:'main',direction:'assistant',content:'Hermes-Verbindungstest bereit.',sender_id:'hermes',sender_name:'Hermes',status:'delivered',created_at:new Date().toISOString()}];
+  window.fetch=async (input,init={})=>{
+    const url=new URL(input,'http://127.0.0.1:8765');
+    const method=(init.method||'GET').toUpperCase();
+    let result={},status=200;
+    if(url.pathname==='/api/hermes/status'){
+      result={ok:true,configured:true,connected:true,last_seen_at:new Date().toISOString(),conversation_count:1};
+    }else if(url.pathname==='/api/hermes/conversations'){
+      result={items:[{conversation_id:'main',last_message:__hermesRows[__hermesRows.length-1].content,message_count:__hermesRows.length}]};
+    }else if(url.pathname==='/api/hermes/messages'&&method==='GET'){
+      const id=url.searchParams.get('conversation_id')||'main';
+      result={conversation_id:id,items:__hermesRows.filter(x=>x.conversation_id===id)};
+    }else if(url.pathname==='/api/hermes/messages'&&method==='POST'){
+      const body=JSON.parse(init.body||'{}');
+      const item={id:'m'+__hermesRows.length,conversation_id:body.conversation_id||'main',direction:'user',content:body.content,sender_id:'local-user',sender_name:'Corvus',status:'queued',created_at:new Date().toISOString()};
+      __hermesRows.push(item);result={ok:true,id:item.id,conversation_id:item.conversation_id,status:'queued'};
+      status=201;
+    }else{
+      result={ok:false,error:'Unerwarteter Hermes-Testendpunkt'};status=404;
+    }
+    return new Response(JSON.stringify(result),{status,headers:{'Content-Type':'application/json'}});
+  };
+  </script>"""
+  hermes_html_source=hermes_html_source.replace(
+    '<link rel="stylesheet" href="./styles.css">',
+    '<style>\n'+css+'\n</style>',1
+  )
+  hermes_html_source=hermes_html_source.replace('</head>',hermes_mock+'\n</head>',1)
+  hermes_html_source=hermes_html_source.replace(
+    '<script src="./js/hermes.js" defer></script>',
+    '<script>\n'+hermes_js_source+'\n</script>',1
+  )
+  hermes_page=browser.new_page(viewport={'width':1280,'height':900})
+  hermes_page.on('pageerror',lambda e:errors.append('Hermes HUD: '+str(e)))
+  hermes_page.set_content(hermes_html_source,wait_until='domcontentloaded',timeout=10000)
+  hermes_page.wait_for_function(
+    "document.querySelector('#hermesConnection')?.textContent==='HERMES VERBUNDEN'",
+    timeout=4000
+  )
+  assert hermes_page.locator('#hermesMessages .hermes-message.assistant').count()==1
+  hermes_page.locator('#hermesInput').fill('Testnachricht an Hermes')
+  hermes_page.locator('#hermesSend').click()
+  hermes_page.wait_for_function(
+    "document.querySelector('#hermesMessages')?.innerText.includes('Testnachricht an Hermes')",
+    timeout=4000
+  )
+  assert hermes_page.locator('#hermesMessages .hermes-message.user').count()==1
+  assert hermes_page.locator('#hermesSend').is_enabled()
+  print('PASS: Hermes-Kanal zeigt Verbindungsstatus, Verlauf und sendet neue Nachrichten über die lokale API')
+  hermes_page.close()
   if errors:raise AssertionError('Unbehandelte JavaScript-Fehler: '+' | '.join(errors))
   print('PASS: keine unbehandelten JavaScript-Fehler');print('SCREENSHOT:',SCREENSHOT);print('DESKTOP:',DESKTOP_SHOT);print('MOBILE:',MOBILE_SHOT)
  finally:browser.close()

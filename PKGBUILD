@@ -8,13 +8,15 @@ license=('custom:KOR-Project')
 depends=('python' 'python-pyqt6' 'python-pyqt6-webengine')
 optdepends=('chromium: separates App-Fenster im Ein-Klick-Start'
             'xdg-utils: Browser-Fallback, falls Chromium fehlt'
-            'firefox: alternativer Browser')
+            'firefox: alternativer Browser'
+            'python-pip: optionale Installation der Hermes-MCP-Erweiterung')
 source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=('1489c6e83eba03e6856f04b39ce3ce1a20deca5e7b901f3b6ac0d30a19eb4ebb')
 
 build() {
   cd "$srcdir"
   python -m py_compile core/server.py core/window.py core/media.py core/github_integration.py
+  python -m py_compile integrations/hermes/kor_client.py integrations/hermes/mcp_server.py integrations/hermes/doctor.py integrations/hermes/plugin/adapter.py
 }
 
 check() {
@@ -29,12 +31,18 @@ package() {
   install -d "$pkgdir/opt/kor-workstation" "$pkgdir/usr/bin" \
     "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/scalable/apps" \
     "$pkgdir/usr/share/licenses/kor-workstation" "$pkgdir/usr/share/doc/kor-workstation"
-  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/scripts" "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/web/js"
+  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/scripts" \
+    "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/web/js" \
+    "$pkgdir/opt/kor-workstation/integrations/hermes" "$pkgdir/opt/kor-workstation/integrations/hermes/plugin"
   install -m644 core/server.py core/window.py core/__init__.py core/mesh.py core/simulation.py core/media.py core/github_integration.py "$pkgdir/opt/kor-workstation/core/"
   install -m755 scripts/import-bkg-data.py "$pkgdir/opt/kor-workstation/scripts/"
-  install -m644 web/index.html web/github.html web/code.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
-  install -m644 web/js/hud-alerts.js web/js/hud.js web/js/media-hub.js web/js/github-center.js "$pkgdir/opt/kor-workstation/web/js/"
+  install -m644 web/index.html web/github.html web/code.html web/hermes.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
+  install -m644 web/js/hud-alerts.js web/js/hud.js web/js/media-hub.js web/js/github-center.js web/js/hermes.js "$pkgdir/opt/kor-workstation/web/js/"
   install -m644 web/geodata/world.geojson "$pkgdir/opt/kor-workstation/web/geodata/world.geojson"
+  install -m644 integrations/__init__.py "$pkgdir/opt/kor-workstation/integrations/"
+  install -m644 integrations/hermes/__init__.py integrations/hermes/kor_client.py integrations/hermes/mcp_server.py integrations/hermes/doctor.py integrations/hermes/requirements.txt integrations/hermes/README.md "$pkgdir/opt/kor-workstation/integrations/hermes/"
+  install -m755 integrations/hermes/setup.sh "$pkgdir/opt/kor-workstation/integrations/hermes/setup.sh"
+  install -m644 integrations/hermes/plugin/__init__.py integrations/hermes/plugin/plugin.yaml integrations/hermes/plugin/adapter.py integrations/hermes/plugin/README.md "$pkgdir/opt/kor-workstation/integrations/hermes/plugin/"
   install -m755 packaging/kor-workstation-launcher.sh "$pkgdir/usr/bin/kor-workstation"
   install -m755 packaging/kor-workstation-stop.sh "$pkgdir/usr/bin/kor-workstation-stop"
   install -m644 packaging/kor-workstation.desktop "$pkgdir/usr/share/applications/kor-workstation.desktop"

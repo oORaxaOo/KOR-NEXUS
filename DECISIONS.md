@@ -1,3 +1,14 @@
+## Designtechnische Entwicklungsentscheidung 37 — Hermes als zusätzlicher lokaler Kanal und MCP-Quelle (2026-11-18)
+
+- Die Hermes-Integration wird in zwei getrennte Komponenten aufgeteilt: ein read-only MCP-Server für strukturierte KOR-NEXUS-Daten und ein Hermes-Community-Plattformplugin für den lokalen Chat-Kanal.
+- Das Plattformplugin wird nicht in Hermes-Core eingebaut. Es wird unter `~/.hermes/plugins/kor-nexus` installiert und über `register(ctx)` registriert. Damit bleibt KOR-NEXUS von Hermes unabhängig und bestehende Telegram-/WhatsApp-/Discord-Adapter werden nicht verändert.
+- Die Chat-Brücke läuft ausschließlich über die bestehende Loopback-HTTP-API. Die Plattformintegration authentifiziert sich mit einem zufällig erzeugten privaten Bearer-Token; der Token wird in einer Datei mit Modus `0600` gespeichert und serverseitig konstantzeitlich verglichen.
+- Nachrichten werden in einer eigenen lokalen SQLite-Warteschlange gespeichert. MCP erhält keinen direkten DB-Zugriff, keine Shell-Funktion und in dieser Ausbaustufe keine schreibenden KOR-NEXUS-Werkzeuge.
+- Die MCP-Abhängigkeit liegt in einer separaten virtuellen Umgebung. Der KOR-NEXUS-Kern bleibt ohne MCP, Hermes Gateway oder Internetzugang startfähig.
+- Das Setup ergänzt nur die benannten Variablen in `~/.hermes/.env`, kopiert das Community-Plugin und gibt die benötigten YAML-Blöcke aus. `~/.hermes/config.yaml` wird nicht automatisch umgeschrieben.
+- KOR-NEXUS bildet einen zusätzlichen Hermes-Kanal, nicht einen zentralen Spiegel sämtlicher externer Plattformunterhaltungen. Jede Hermes-Plattform behält ihre normale Sitzungsidentität.
+- Vor Merge sind automatisierte CI-Gates und ein realer Gateway-Test erforderlich. Bis dahin bleibt die Integration auf `transfer/hermes-integration`; `main` wird nicht direkt verändert.
+
 ## Designtechnische Entwicklungsentscheidung 36 — Repository eindeutig zuordnen und CI vorbereiten (1.20.0)
 
 - GitHub-Connector identifizierte `oORaxaOo/KOR-NEXUS` anhand des exakten Repository-Namens und Besitzers; Standardbranch `main`.

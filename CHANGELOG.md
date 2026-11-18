@@ -1,5 +1,15 @@
 # KOR-NEXUS Änderungsprotokoll
 
+## Unveröffentlicht — Hermes-Integration (Feature-Branch)
+
+- Lokalen Hermes-Chat-Kanal im KOR-NEXUS-HUD ergänzt; Nachrichten und Antworten werden in einer eigenen SQLite-Warteschlange pro Unterhaltung gespeichert.
+- Authentifizierte Loopback-Bridge mit privatem Bearer-Token und konstanter Tokenprüfung ergänzt; kein LAN-Listener und kein direkter SQLite-Zugriff durch Hermes.
+- Offiziellen MCP-Server mit ausschließlich lesenden Werkzeugen für Status, Aufgaben, Projekte, Datensätze, Ressourcen, Systemmetriken und RSS-Cache ergänzt.
+- Optionales Hermes-Community-Plattformplugin unter `~/.hermes/plugins/kor-nexus` vorbereitet; bestehende Hermes-Plattformen werden nicht ersetzt.
+- Benutzerinstallation, Arch-Paket, Quellverifikation und isolierte CI-Gates um Hermes-Dateien und den Chat-Bildschirm erweitert.
+- Status: CI- und reale Hermes-Gateway-Verifikation stehen noch aus; keine Änderung an `main` und kein Merge ausgeführt.
+
+
 ## Unveröffentlicht — GitHub Development Center (Feature-Branch)
 
 - GitHub-Kommandozentrale ergänzt: autorisierte Repositories, Branches, offene Issues/PRs, Commits und Actions.
