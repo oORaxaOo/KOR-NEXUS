@@ -79,6 +79,12 @@ class KorNexusClient:
         if not isinstance(path, str) or not path.startswith("/api/") or ".." in path.split("/"):
             raise KorApiError("Ungültiger KOR-NEXUS-API-Pfad.")
         if method == "GET":
+            allowed_get_paths = {
+                "/api/engine/status", "/api/tasks", "/api/records", "/api/resources",
+                "/api/engine/alerts", "/api/dashboard/projects", "/api/events",
+            }
+            if urllib.parse.urlsplit(path).path not in allowed_get_paths:
+                raise KorApiError("Dieser lesende KOR-NEXUS-Endpunkt ist nicht freigegeben.")
             if payload is not None:
                 raise KorApiError("GET-Anfragen dürfen keine Schreibdaten enthalten.")
         elif method == "POST":
