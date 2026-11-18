@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """KOR-NEXUS local-first core. Standard library only; loopback-bound."""
 from __future__ import annotations
-import concurrent.futures, datetime as dt, fcntl, html, json, math, os, re, shutil, signal, socket, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import concurrent.futures, datetime as dt, fcntl, html, hmac, json, math, os, re, shutil, signal, socket, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -180,6 +180,27 @@ def initialize():
           CREATE TABLE IF NOT EXISTS feed_items(id TEXT PRIMARY KEY,source_key TEXT NOT NULL,source_name TEXT NOT NULL,title TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',url TEXT NOT NULL,published TEXT NOT NULL DEFAULT '',fetched_at TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS idx_feed_published ON feed_items(published DESC);
           CREATE TABLE IF NOT EXISTS feed_status(source_key TEXT PRIMARY KEY,source_name TEXT NOT NULL,last_attempt TEXT,last_success TEXT,status TEXT NOT NULL DEFAULT 'Noch nicht abgerufen',item_count INTEGER NOT NULL DEFAULT 0);
+          CREATE TABLE IF NOT EXISTS hermes_messages(
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL CHECK(length(conversation_id)<=120),
+            direction TEXT NOT NULL CHECK(direction IN ('user','assistant','system')),
+            content TEXT NOT NULL CHECK(length(content)<=20000),
+            sender_id TEXT NOT NULL DEFAULT '',
+            sender_name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed')),
+            created_at TEXT NOT NULL,
+            delivered_at TEXT
+          );
+          CREATE INDEX IF NOT EXISTS idx_hermes_messages_conversation
+            ON hermes_messages(conversation_id,created_at,id);
+          CREATE INDEX IF NOT EXISTS idx_hermes_messages_queue
+            ON hermes_messages(direction,status,created_at);
+          CREATE TABLE IF NOT EXISTS hermes_bridge_state(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            last_seen_at TEXT,
+            last_error TEXT
+          );
+          INSERT OR IGNORE INTO hermes_bridge_state(id,last_seen_at,last_error) VALUES(1,NULL,NULL);
         ''')
         con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)',(utcnow(),))
         con.execute('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(2,?)',(utcnow(),))
@@ -744,6 +765,17 @@ class AppHandler(BaseHTTPRequestHandler):
             p=urllib.parse.urlsplit(origin)
             if p.hostname not in ('127.0.0.1','localhost','::1') or p.port != self.server.server_port: return False
         return True
+    def hermes_bridge_authorized(self):
+        """Authenticate the optional Hermes platform plugin with a private local bearer token."""
+        authorization=self.headers.get('Authorization','')
+        scheme,sep,supplied=authorization.partition(' ')
+        if not sep or scheme.lower()!='bearer' or not supplied:
+            return False
+        try:
+            expected=(DATA_HOME/'hermes-bridge-token').read_text(encoding='utf-8').strip()
+        except (OSError,UnicodeError):
+            return False
+        return bool(expected) and hmac.compare_digest(supplied.strip(),expected)
     def read_body(self):
         try:n=int(self.headers.get('Content-Length','0'))
         except ValueError: raise ValueError('Ungültige Content-Length')
@@ -758,6 +790,64 @@ class AppHandler(BaseHTTPRequestHandler):
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('GET','API',path)
         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if path.startswith('/api/hermes/bridge/'):
+            if not self.hermes_bridge_authorized():
+                return self.fail(401,'Hermes-Bridge nicht autorisiert.')
+        if path=='/api/hermes/status':
+            token_file=DATA_HOME/'hermes-bridge-token'
+            with db_connect() as con:
+                state=con.execute('SELECT last_seen_at,last_error FROM hermes_bridge_state WHERE id=1').fetchone()
+                conversations=con.execute('SELECT COUNT(DISTINCT conversation_id) n FROM hermes_messages').fetchone()['n']
+            last_seen=state['last_seen_at'] if state else None
+            online=False
+            if last_seen:
+                try:
+                    stamp=dt.datetime.fromisoformat(last_seen.replace('Z','+00:00'))
+                    online=(dt.datetime.now(dt.timezone.utc)-stamp).total_seconds()<=30
+                except (ValueError,TypeError):
+                    online=False
+            return self.send_json({'ok':True,'configured':token_file.is_file(),'connected':online,'last_seen_at':last_seen,'conversation_count':conversations,'last_error':state['last_error'] if state else None})
+        if path=='/api/hermes/conversations':
+            with db_connect() as con:
+                rows=con.execute("""SELECT m.conversation_id,
+                    (SELECT x.content FROM hermes_messages x WHERE x.conversation_id=m.conversation_id ORDER BY x.created_at DESC,x.rowid DESC LIMIT 1) last_message,
+                    (SELECT x.direction FROM hermes_messages x WHERE x.conversation_id=m.conversation_id ORDER BY x.created_at DESC,x.rowid DESC LIMIT 1) last_direction,
+                    (SELECT x.sender_name FROM hermes_messages x WHERE x.conversation_id=m.conversation_id ORDER BY x.created_at DESC,x.rowid DESC LIMIT 1) last_sender,
+                    COUNT(*) message_count,MAX(m.created_at) updated_at
+                    FROM hermes_messages m GROUP BY m.conversation_id
+                    ORDER BY updated_at DESC LIMIT 40""").fetchall()
+            return self.send_json({'items':[dict(row) for row in rows]})
+        if path=='/api/hermes/messages':
+            conversation_id=(q.get('conversation_id',['main'])[0] or 'main').strip()
+            if not conversation_id or len(conversation_id)>120:
+                return self.fail(400,'Ungültige Unterhaltungs-ID.')
+            try:
+                limit=max(1,min(300,int(q.get('limit',['200'])[0])))
+            except (ValueError,TypeError):
+                return self.fail(400,'Ungültige Nachrichtenbegrenzung.')
+            with db_connect() as con:
+                rows=con.execute('SELECT id,conversation_id,direction,content,sender_id,sender_name,status,created_at FROM hermes_messages WHERE conversation_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?',(conversation_id,limit)).fetchall()
+            items=[dict(row) for row in reversed(rows)]
+            return self.send_json({'items':items,'conversation_id':conversation_id})
+        if path=='/api/hermes/bridge/status':
+            with db_connect() as con:
+                row=con.execute('SELECT COUNT(*) n FROM hermes_messages WHERE direction=\'user\' AND status=\'queued\'').fetchone()
+            return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'queued_messages':row['n']})
+        if path=='/api/hermes/bridge/inbox':
+            try:
+                limit=max(1,min(20,int(q.get('limit',['10'])[0])))
+            except (ValueError,TypeError):
+                return self.fail(400,'Ungültige Nachrichtenbegrenzung.')
+            now=utcnow()
+            with _db_lock, db_connect() as con:
+                con.execute('BEGIN IMMEDIATE')
+                rows=con.execute("SELECT id,conversation_id,content,sender_id,sender_name,created_at FROM hermes_messages WHERE direction='user' AND status='queued' ORDER BY created_at,rowid LIMIT ?",(limit,)).fetchall()
+                messages=[dict(row) for row in rows]
+                if messages:
+                    ids=[row['id'] for row in messages]
+                    con.executemany("UPDATE hermes_messages SET status='delivered',delivered_at=? WHERE id=?",[(now,message_id) for message_id in ids])
+                con.execute('UPDATE hermes_bridge_state SET last_seen_at=?,last_error=NULL WHERE id=1',(now,))
+            return self.send_json({'items':messages,'count':len(messages)})
         if path == '/api/ide/status':
             roots = _ide_workspace_roots()
             workspaces = []
@@ -915,6 +1005,42 @@ class AppHandler(BaseHTTPRequestHandler):
         if not self.trusted():return self.fail(403,'Nur lokale Anfragen sind erlaubt.')
         path=urllib.parse.urlsplit(self.path).path
         if path.startswith('/api/'): add_system_log('POST','API',path)
+        if path=='/api/hermes/bridge/replies':
+            if not self.hermes_bridge_authorized():
+                return self.fail(401,'Hermes-Bridge nicht autorisiert.')
+            try:
+                data=self.read_body()
+            except ValueError as exc:
+                return self.fail(400,str(exc))
+            conversation_id=str(data.get('conversation_id','')).strip()
+            content=str(data.get('content','')).strip()
+            if not conversation_id or len(conversation_id)>120 or any(ord(ch)<32 for ch in conversation_id):
+                return self.fail(400,'Ungültige Unterhaltungs-ID.')
+            if not content or len(content)>20000:
+                return self.fail(400,'Antwort muss zwischen 1 und 20000 Zeichen enthalten.')
+            now=utcnow(); message_id=uuid.uuid4().hex
+            with _db_lock, db_connect() as con:
+                con.execute('INSERT INTO hermes_messages(id,conversation_id,direction,content,sender_id,sender_name,status,created_at,delivered_at) VALUES(?,?,?,?,?,?,?,?,?)',(message_id,conversation_id,'assistant',content,'hermes','Hermes','delivered',now,now))
+                con.execute('UPDATE hermes_bridge_state SET last_seen_at=?,last_error=NULL WHERE id=1',(now,))
+            return self.send_json({'ok':True,'id':message_id,'conversation_id':conversation_id,'created_at':now},201)
+        if path=='/api/hermes/messages':
+            try:
+                data=self.read_body()
+            except ValueError as exc:
+                return self.fail(400,str(exc))
+            conversation_id=str(data.get('conversation_id','main')).strip() or 'main'
+            content=str(data.get('content','')).strip()
+            sender_name=str(data.get('sender_name','Corvus')).strip()[:80] or 'Lokaler Nutzer'
+            if not conversation_id or len(conversation_id)>120 or any(ord(ch)<32 for ch in conversation_id):
+                return self.fail(400,'Ungültige Unterhaltungs-ID.')
+            if not content or len(content)>20000:
+                return self.fail(400,'Nachricht muss zwischen 1 und 20000 Zeichen enthalten.')
+            if not (DATA_HOME/'hermes-bridge-token').is_file():
+                return self.send_json({'ok':False,'error':'Hermes-Bridge ist noch nicht eingerichtet. Bitte zuerst integrations/hermes/setup.sh ausführen.'},503)
+            now=utcnow(); message_id=uuid.uuid4().hex
+            with _db_lock, db_connect() as con:
+                con.execute('INSERT INTO hermes_messages(id,conversation_id,direction,content,sender_id,sender_name,status,created_at) VALUES(?,?,?,?,?,?,?,?)',(message_id,conversation_id,'user',content,'local-user',sender_name,'queued',now))
+            return self.send_json({'ok':True,'id':message_id,'conversation_id':conversation_id,'created_at':now,'status':'queued'},201)
         if path == '/api/ide/start':
             try:
                 data = self.read_body()
