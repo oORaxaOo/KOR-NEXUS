@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import urllib.error
@@ -63,7 +64,7 @@ def resolve_base_url(value: str | None = None) -> str:
 
 
 class KorNexusClient:
-    """Read-only JSON client. Phase I deliberately rejects all write methods."""
+    """Bounded KOR-NEXUS API client with an explicit, narrow write allowlist."""
 
     def __init__(self, base_url: str | None = None, timeout: float = 5.0):
         self.base_url = resolve_base_url(base_url)
@@ -73,16 +74,33 @@ class KorNexusClient:
             timeout = 5.0
         self.timeout = max(1.0, min(timeout, 20.0))
 
-    def request(self, method: str, path: str) -> dict:
-        if method.upper() != "GET":
-            raise KorApiError("Phase I erlaubt ausschließlich lesende GET-Anfragen.")
-        if not path.startswith("/api/") or ".." in path.split("/"):
+    def request(self, method: str, path: str, payload: dict | None = None) -> dict:
+        method = method.upper()
+        if not isinstance(path, str) or not path.startswith("/api/") or ".." in path.split("/"):
             raise KorApiError("Ungültiger KOR-NEXUS-API-Pfad.")
-        request = urllib.request.Request(
-            self.base_url + path,
-            headers={"Accept": "application/json", "User-Agent": "KOR-NEXUS-Hermes-MCP/0.1"},
-            method="GET",
-        )
+        if method == "GET":
+            if payload is not None:
+                raise KorApiError("GET-Anfragen dürfen keine Schreibdaten enthalten.")
+        elif method == "POST":
+            if path not in {"/api/tasks", "/api/records"}:
+                raise KorApiError("Dieser schreibende KOR-NEXUS-Endpunkt ist nicht freigegeben.")
+        elif method == "PATCH":
+            if not (re.fullmatch(r"/api/tasks/[1-9][0-9]*", path) or
+                    re.fullmatch(r"/api/records/[1-9][0-9]*", path)):
+                raise KorApiError("Dieser schreibende KOR-NEXUS-Endpunkt ist nicht freigegeben.")
+        else:
+            raise KorApiError("Diese HTTP-Methode ist für die Integration nicht freigegeben.")
+        data = None
+        headers = {"Accept": "application/json", "User-Agent": "KOR-NEXUS-Hermes-MCP/0.1"}
+        if payload is not None:
+            if not isinstance(payload, dict):
+                raise KorApiError("API-Eingaben müssen JSON-Objekte sein.")
+            try:
+                data = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+            except (TypeError, ValueError) as exc:
+                raise KorApiError("Die API-Eingabe enthält ungültige JSON-Daten.") from exc
+            headers["Content-Type"] = "application/json; charset=utf-8"
+        request = urllib.request.Request(self.base_url + path, data=data, headers=headers, method=method)
 
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -114,6 +132,123 @@ class KorNexusClient:
             raise KorApiError("KOR-NEXUS konnte die Anfrage nicht abschließen.")
         return value
 
+    @staticmethod
+    def _text(value: object, field: str, maximum: int, *, required: bool = False) -> str:
+        if not isinstance(value, str):
+            raise KorApiError(f"{field} muss Text sein.")
+        value = value.strip()
+        if required and not value:
+            raise KorApiError(f"{field} darf nicht leer sein.")
+        if len(value) > maximum:
+            raise KorApiError(f"{field} überschreitet {maximum} Zeichen.")
+        return value
+
+    @staticmethod
+    def _integer(value: object, field: str, minimum: int, maximum: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+            raise KorApiError(f"{field} muss eine Ganzzahl zwischen {minimum} und {maximum} sein.")
+        return value
+
+    @staticmethod
+    def _record_module(module: str) -> str:
+        if module not in {"atlas", "projects", "archive", "simulation", "database"}:
+            raise KorApiError("Unbekanntes KOR-NEXUS-Modul.")
+        return module
+
+    @classmethod
+    def _tags(cls, tags: list[str] | None) -> list[str]:
+        if tags is None:
+            return []
+        if not isinstance(tags, list) or len(tags) > 50:
+            raise KorApiError("Tags müssen eine Liste mit höchstens 50 Einträgen sein.")
+        return [cls._text(tag, "Tag", 60) for tag in tags]
+
+    def create_task(
+        self, title: str, area: str = "SYSTEM", due_at: str | None = None,
+        priority: int = 3, estimated_minutes: int | None = None, blocked_reason: str = "",
+    ) -> dict:
+        payload = {
+            "title": self._text(title, "Aufgabentitel", 180, required=True),
+            "area": self._text(area, "Aufgabenbereich", 80) or "SYSTEM",
+            "priority": self._integer(priority, "Priorität", 1, 5),
+            "blocked_reason": self._text(blocked_reason, "Blockierungsgrund", 1000),
+        }
+        if due_at is not None:
+            payload["due_at"] = self._text(due_at, "Fälligkeitsdatum", 100, required=True)
+        if estimated_minutes is not None:
+            payload["estimated_minutes"] = self._integer(estimated_minutes, "Geschätzte Minuten", 0, 10_000_000)
+        return self.request("POST", "/api/tasks", payload)
+
+    def update_task(
+        self, task_id: int, title: str | None = None, area: str | None = None,
+        done: bool | None = None, due_at: str | None = None, clear_due_date: bool = False,
+        priority: int | None = None, estimated_minutes: int | None = None,
+        actual_minutes: int | None = None, blocked_reason: str | None = None,
+    ) -> dict:
+        ident = self._integer(task_id, "Aufgaben-ID", 1, 2_147_483_647)
+        if due_at is not None and clear_due_date:
+            raise KorApiError("Fälligkeitsdatum setzen und löschen sind gegenseitig ausgeschlossen.")
+        payload = {}
+        if title is not None:
+            payload["title"] = self._text(title, "Aufgabentitel", 180, required=True)
+        if area is not None:
+            payload["area"] = self._text(area, "Aufgabenbereich", 80)
+        if done is not None:
+            if not isinstance(done, bool):
+                raise KorApiError("done muss true oder false sein.")
+            payload["done"] = done
+        if due_at is not None:
+            payload["due_at"] = self._text(due_at, "Fälligkeitsdatum", 100, required=True)
+        elif clear_due_date:
+            payload["due_at"] = None
+        if priority is not None:
+            payload["priority"] = self._integer(priority, "Priorität", 1, 5)
+        if estimated_minutes is not None:
+            payload["estimated_minutes"] = self._integer(estimated_minutes, "Geschätzte Minuten", 0, 10_000_000)
+        if actual_minutes is not None:
+            payload["actual_minutes"] = self._integer(actual_minutes, "Tatsächliche Minuten", 0, 10_000_000)
+        if blocked_reason is not None:
+            payload["blocked_reason"] = self._text(blocked_reason, "Blockierungsgrund", 1000)
+        if not payload:
+            raise KorApiError("Mindestens ein Aufgabenfeld muss geändert werden.")
+        return self.request("PATCH", f"/api/tasks/{ident}", payload)
+
+    def create_record(
+        self, module: str, title: str, body: str = "", region: str = "",
+        tags: list[str] | None = None,
+    ) -> dict:
+        payload = {
+            "module": self._record_module(module),
+            "title": self._text(title, "Eintragstitel", 180, required=True),
+            "body": self._text(body, "Eintragsinhalt", 100_000),
+            "region": self._text(region, "Region", 180),
+            "tags": self._tags(tags),
+        }
+        return self.request("POST", "/api/records", payload)
+
+    def update_record(
+        self, record_id: int, module: str | None = None, title: str | None = None,
+        body: str | None = None, region: str | None = None, tags: list[str] | None = None,
+        update_tags: bool = False,
+    ) -> dict:
+        ident = self._integer(record_id, "Datensatz-ID", 1, 2_147_483_647)
+        payload = {}
+        if module is not None:
+            payload["module"] = self._record_module(module)
+        if title is not None:
+            payload["title"] = self._text(title, "Eintragstitel", 180, required=True)
+        if body is not None:
+            payload["body"] = self._text(body, "Eintragsinhalt", 100_000)
+        if region is not None:
+            payload["region"] = self._text(region, "Region", 180)
+        if update_tags:
+            payload["tags"] = self._tags(tags)
+        elif tags is not None:
+            payload["tags"] = self._tags(tags)
+        if not payload:
+            raise KorApiError("Mindestens ein Datensatzfeld muss geändert werden.")
+        return self.request("PATCH", f"/api/records/{ident}", payload)
+
     def get_status(self) -> dict:
         return self.request("GET", "/api/engine/status")
 
@@ -121,8 +256,7 @@ class KorNexusClient:
         return self.request("GET", "/api/tasks").get("items", [])
 
     def list_records(self, module: str) -> list[dict]:
-        if module not in {"atlas", "projects", "archive", "simulation", "database"}:
-            raise KorApiError("Unbekanntes KOR-NEXUS-Modul.")
+        module = self._record_module(module)
         query = urllib.parse.urlencode({"module": module})
         return self.request("GET", f"/api/records?{query}").get("items", [])
 
