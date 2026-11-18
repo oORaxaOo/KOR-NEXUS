@@ -3,20 +3,21 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 command -v python3 >/dev/null 2>&1 || { echo 'Fehler: Python 3 fehlt.' >&2; exit 2; }
-python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/test_server.py integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py integrations/hermes/mcp_server/tests/test_kor_client.py
+python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/hermes_bridge.py core/test_server.py core/test_hermes_bridge.py integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py integrations/hermes/mcp_server/tests/test_kor_client.py integrations/hermes/platform_plugin/adapter.py integrations/hermes/platform_plugin/tests/test_pending.py web/lilith.js
 printf 'OK  Python-Syntax und Kernmodule\n'
 python3 - <<'PY'
 import json
 from pathlib import Path
-required=['core/__init__.py','core/server.py','core/engine.py','core/ai_provider.py','core/test_server.py','integrations/hermes/mcp_server/kor_client.py','integrations/hermes/mcp_server/server.py','integrations/hermes/mcp_server/requirements.txt','integrations/hermes/mcp_server/tests/test_kor_client.py','integrations/hermes/install.sh','integrations/hermes/README.md','web/index.html','web/styles.css','web/app.js','web/geodata/world.geojson','launch.sh','stop.sh','install-user.sh','uninstall-user.sh','packaging/kor-workstation.desktop','packaging/kor-workstation-launcher.sh','packaging/kor-workstation-stop.sh','packaging/icons/kor-workstation.svg','scripts/build-arch-package.sh','scripts/test-installation.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/setup-local-ai.sh','PKGBUILD','README.md','EXPORT_SCHEMA.md','CHANGELOG.md','DECISIONS.md','PROJECT_STATUS.md']
+required=['core/__init__.py','core/server.py','core/engine.py','core/ai_provider.py','core/test_server.py','core/hermes_bridge.py','core/test_hermes_bridge.py','integrations/hermes/mcp_server/kor_client.py','integrations/hermes/mcp_server/server.py','integrations/hermes/mcp_server/requirements.txt','integrations/hermes/mcp_server/tests/test_kor_client.py','integrations/hermes/platform_plugin/adapter.py','integrations/hermes/platform_plugin/plugin.yaml','integrations/hermes/platform_plugin/tests/test_pending.py','integrations/hermes/platform_plugin/README.md','integrations/hermes/install.sh','integrations/hermes/README.md','web/index.html','web/styles.css','web/lilith.css','web/lilith.js','web/app.js','web/geodata/world.geojson','launch.sh','stop.sh','install-user.sh','uninstall-user.sh','packaging/kor-workstation.desktop','packaging/kor-workstation-launcher.sh','packaging/kor-workstation-stop.sh','packaging/icons/kor-workstation.svg','scripts/build-arch-package.sh','scripts/test-installation.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/setup-local-ai.sh','PKGBUILD','README.md','EXPORT_SCHEMA.md','CHANGELOG.md','DECISIONS.md','PROJECT_STATUS.md']
 for name in required:
     p=Path(name)
     if not p.is_file() or p.stat().st_size==0: raise SystemExit(f'FEHLER: Datei fehlt/leer: {name}')
     print('OK ',name)
 html=Path('web/index.html').read_text()
-for asset in ('./styles.css','./app.js'):
+for asset in ('./styles.css','./lilith.css','./app.js','./lilith.js'):
     if asset not in html: raise SystemExit(f'FEHLER: {asset} nicht eingebunden')
 if "fetch('/api'+path" not in Path('web/app.js').read_text(): raise SystemExit('FEHLER: API-Client fehlt')
+if "'/api/lilith/message'" not in Path('web/lilith.js').read_text(): raise SystemExit('FEHLER: Lilith-Frontend-API fehlt')
 geo=json.loads(Path('web/geodata/world.geojson').read_text(encoding='utf-8'))
 if geo.get('type')!='FeatureCollection' or len(geo.get('features',[]))<150: raise SystemExit('FEHLER: Offline-Weltgeometrien fehlen oder sind unvollständig')
 if not any((f.get('properties') or {}).get('iso_a3')=='DEU' for f in geo['features']): raise SystemExit('FEHLER: Deutschlandgeometrie fehlt')
