@@ -37,6 +37,7 @@ class HermesPlatformContractTests(unittest.TestCase):
     def test_platform_adapter_uses_private_bridge_and_rejects_redirects(self):
         self.assertIn('Authorization": f"Bearer {self.token}"', self.source)
         self.assertIn("class _NoRedirect", self.source)
+        self.assertIn("urllib.request.ProxyHandler({})", self.source)
         self.assertIn('parsed.hostname not in {"127.0.0.1", "localhost", "::1"}', self.source)
         normalized = " ".join(self.source.split())
         self.assertIn('self._request_json, "POST", "/api/hermes/bridge/replies"', normalized)
