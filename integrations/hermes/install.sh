@@ -11,7 +11,7 @@ PLUGIN_TARGET="$HERMES_HOME/plugins/kor-nexus-panel"
 
 command -v python3 >/dev/null 2>&1 || { echo 'FEHLER: python3 fehlt.' >&2; exit 2; }
 [[ -f "$SOURCE/server.py" && -f "$SOURCE/requirements.txt" ]] || { echo 'FEHLER: MCP-Quelldateien fehlen.' >&2; exit 2; }
-[[ -f "$PLATFORM_SOURCE/adapter.py" && -f "$PLATFORM_SOURCE/plugin.yaml" ]] || { echo 'FEHLER: Hermes-Plattformplugin fehlt.' >&2; exit 2; }
+[[ -f "$PLATFORM_SOURCE/__init__.py" && -f "$PLATFORM_SOURCE/adapter.py" && -f "$PLATFORM_SOURCE/plugin.yaml" ]] || { echo 'FEHLER: Hermes-Plattformplugin fehlt.' >&2; exit 2; }
 
 mkdir -p "$TARGET"
 rm -rf "$TARGET/mcp_server"
@@ -78,6 +78,7 @@ echo "Plattformplugin: $PLUGIN_TARGET"
 echo "MCP-Konfigurationsvorlage: $TARGET/hermes-mcp-config.yaml"
 echo "Gateway-Konfigurationsvorlage: $TARGET/hermes-platform-config.yaml"
 echo 'Die Datei ~/.hermes/config.yaml wurde NICHT automatisch verändert.'
+echo 'Plugin aktivieren: hermes plugins enable kor-nexus-panel'
 echo 'Beide Abschnitte in die bestehende Hermes-Konfiguration übernehmen (nicht doppelt anlegen).'
 echo 'Danach Hermes Gateway neu starten und die Verbindung in KOR-NEXUS prüfen.'
 echo 'MCP-Test: hermes mcp test kor_nexus'
