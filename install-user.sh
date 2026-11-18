@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd -- "$(dirname -- "$0")" && pwd)"
 command -v python3 >/dev/null 2>&1 || { echo 'Python 3 fehlt. Bitte Python 3 installieren.' >&2; exit 1; }
 [[ -s "$ROOT/core/server.py" && -s "$ROOT/web/index.html" && -s "$ROOT/web/app.js" && -s "$ROOT/web/geodata/world.geojson" ]] || { echo 'Installationsdateien fehlen; bitte das vollständige Archiv entpacken.' >&2; exit 1; }
-DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+[[ -s "$ROOT/integrations/hermes/mcp_server.py" && -s "$ROOT/integrations/hermes/requirements.txt" ]] || { echo 'Hermes-Integrationsdateien fehlen; bitte das vollständige Archiv entpacken.' >&2; exit 1; }
+DATA_HOME="$(printenv XDG_DATA_HOME 2>/dev/null || true)"
+[[ -n "$DATA_HOME" ]] || DATA_HOME="$HOME/.local/share"
 APP_DIR="$DATA_HOME/kor-workstation-app"
 RUNTIME_DIR="$DATA_HOME/kor-workstation"
 BIN_DIR="$HOME/.local/bin"
 APP_MENU="$DATA_HOME/applications"
 ICON_DIR="$DATA_HOME/icons/hicolor/scalable/apps"
-LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/kor-workstation"
+STATE_HOME="$(printenv XDG_STATE_HOME 2>/dev/null || true)"
+[[ -n "$STATE_HOME" ]] || STATE_HOME="$HOME/.local/state"
+LOG_DIR="$STATE_HOME/kor-workstation"
 
-# Stop the currently installed server before replacing code or assets.
 if [[ -s "$RUNTIME_DIR/runtime.json" ]]; then
   if [[ -x "$BIN_DIR/kor-workstation-stop" ]]; then
     "$BIN_DIR/kor-workstation-stop" >/dev/null || { echo 'Aktualisierung abgebrochen: laufende Instanz konnte nicht sicher beendet werden.' >&2; exit 1; }
@@ -25,15 +28,13 @@ if [[ -s "$RUNTIME_DIR/runtime.json" ]]; then
   [[ ! -s "$RUNTIME_DIR/runtime.json" ]] || { echo 'Aktualisierung abgebrochen: der Server meldet sich nach dem Stop nicht ab. Daten und alte Programmdateien bleiben erhalten.' >&2; exit 1; }
 fi
 
-# Copy the complete application tree, not just the original MVP files.
-# New server modules and nested HUD assets are runtime dependencies.
 mkdir -p "$APP_DIR" "$BIN_DIR" "$APP_MENU" "$ICON_DIR" "$LOG_DIR"
 chmod 700 "$LOG_DIR"
 cp -a "$ROOT/core" "$APP_DIR/"
 cp -a "$ROOT/web" "$APP_DIR/"
+cp -a "$ROOT/integrations" "$APP_DIR/"
 install -m 644 "$ROOT/packaging/icons/kor-workstation.svg" "$ICON_DIR/kor-workstation.svg"
 
-# Build a launcher with shell-safe, literal paths (including spaces).
 printf -v APP_DIR_Q '%q' "$APP_DIR"
 printf -v LOG_DIR_Q '%q' "$LOG_DIR"
 cat > "$BIN_DIR/kor-workstation" <<EOF2
@@ -56,12 +57,11 @@ EOF2
 chmod 755 "$BIN_DIR/kor-workstation"
 install -m 755 "$ROOT/packaging/kor-workstation-stop.sh" "$BIN_DIR/kor-workstation-stop"
 
-# Desktop Entry Exec uses double quotes and escaped backslashes/quotes, not shell %q.
 python3 - "$BIN_DIR/kor-workstation" "$APP_MENU/kor-workstation.desktop" <<'PY'
 import sys
 from pathlib import Path
 exe,dest=sys.argv[1:]
-def desktop_quote(s): return '"'+s.replace('\\','\\\\').replace('"','\\"').replace('`','\\`').replace('$','\\$')+'"'
+def desktop_quote(s): return '"'+s.replace('\\','\\\\').replace('"','\\"').replace('$','\\$')+'"'
 dest=Path(dest)
 dest.write_text('[Desktop Entry]\nType=Application\nName=KOR-NEXUS\nGenericName=Local Knowledge and Planning Workspace\nComment=Lokale SQLite-Workstation für Wissen, Projekte und Lageübersichten\nExec='+desktop_quote(exe)+'\nIcon=kor-workstation\nTerminal=false\nCategories=Office;Utility;Development;\nKeywords=Kor;Notizen;Projekte;Archiv;Atlas;SQLite;\nStartupNotify=true\n',encoding='utf-8')
 dest.chmod(0o644)
