@@ -83,8 +83,13 @@ Die vom Installer erzeugte hermes-platform-config.yaml enthält:
           enabled: true
           extra:
             port: 9876
+            allowed_users:
+              - local-owner
 
 Diesen Abschnitt in den bestehenden gateway.platforms-Block der ~/.hermes/config.yaml übernehmen. Den bereits vorhandenen Block nicht überschreiben oder ein zweites gateway:-Element anlegen. Zusätzlich den MCP-Eintrag aus hermes-mcp-config.yaml unter den vorhandenen mcp_servers:-Abschnitt übernehmen.
+
+
+Die Plattform nutzt eine explizite Hermes-Allowlist für die feste lokale Identität `local-owner`. Der Adapter erklärt eingehende Nachrichten ausdrücklich **nicht** zu vertrauenswürdigen Upstream-Nachrichten und umgeht damit keine normalen Gateway-Autorisierungsprüfungen. Die Liste muss auf `local-owner` beschränkt bleiben; keine Wildcards oder globale Freigabe eintragen.
 
 Anschließend das Hermes-Gateway neu starten. Beim erfolgreichen Start erzeugt das Plugin eine private Verbindungsdatei unter $XDG_CONFIG_HOME/kor-nexus/hermes-bridge.json (Standard: ~/.config/kor-nexus/hermes-bridge.json). Sie enthält ein zufälliges Zugriffstoken und wird mit Dateirechten 0600 geschrieben. Das Verzeichnis wird auf 0700 gesetzt. KOR-NEXUS liest diese Datei serverseitig; das Token wird niemals an den Browser ausgeliefert.
 
