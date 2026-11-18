@@ -44,7 +44,11 @@ config.write_text(
     "        - kor_list_resources\n"
     "        - kor_get_alerts\n"
     "        - kor_get_dashboard\n"
-    "        - kor_get_events\n",
+    "        - kor_get_events\n"
+    "        - kor_create_task\n"
+    "        - kor_update_task\n"
+    "        - kor_create_record\n"
+    "        - kor_update_record\n",
     encoding="utf-8",
 )
 print(f"Konfigurationsvorlage: {config}")
