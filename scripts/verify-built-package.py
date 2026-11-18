@@ -26,6 +26,7 @@ for expected in (
     "opt/kor-workstation/web/lilith.css",
     "opt/kor-workstation/integrations/hermes/install.sh",
     "opt/kor-workstation/integrations/hermes/mcp_server/server.py",
+    "opt/kor-workstation/integrations/hermes/platform_plugin/__init__.py",
     "opt/kor-workstation/integrations/hermes/platform_plugin/adapter.py",
     "opt/kor-workstation/integrations/hermes/platform_plugin/plugin.yaml",
     "usr/bin/kor-workstation",
