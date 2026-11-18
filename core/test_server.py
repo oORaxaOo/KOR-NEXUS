@@ -578,6 +578,20 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(batch['items'][0]['content'],'Statusbericht, bitte.')
         self.assertEqual(batch['items'][0]['sender_name'],'Corvus')
 
+        # Fetching does not acknowledge the message: a failed gateway admission must be retryable.
+        status,retry_batch=self.req('/api/hermes/bridge/inbox?limit=10',headers=headers)
+        self.assertEqual(status,200)
+        self.assertEqual(retry_batch['count'],1)
+        self.assertEqual(retry_batch['items'][0]['id'],batch['items'][0]['id'])
+        self.assertEqual(self.req('/api/hermes/bridge/ack','POST',{'message_ids':[batch['items'][0]['id']]})[0],401)
+
+        status,ack=self.req('/api/hermes/bridge/ack','POST',{'message_ids':[batch['items'][0]['id']]},headers=headers)
+        self.assertEqual(status,200)
+        self.assertEqual(ack['acknowledged'],1)
+        status,empty=self.req('/api/hermes/bridge/inbox?limit=10',headers=headers)
+        self.assertEqual(status,200)
+        self.assertEqual(empty['count'],0)
+
         # Hermes replies are persisted in the same local conversation.
         status,reply=self.req('/api/hermes/bridge/replies','POST',{
             'conversation_id':'main','content':'Verstanden. Ich prüfe die Lage.'
