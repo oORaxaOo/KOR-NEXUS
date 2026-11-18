@@ -42,7 +42,7 @@ jobs:
 
       - name: Check Python syntax and shell setup
         run: |
-          python -m py_compile integrations/hermes/kor_client.py integrations/hermes/mcp_server.py integrations/hermes/doctor.py tests/test_hermes_mcp_client.py integrations/hermes/tests/test_mcp_server.py
+          python -m py_compile integrations/hermes/kor_client.py integrations/hermes/mcp_server.py integrations/hermes/doctor.py tests/test_hermes_mcp_client.py integrations/hermes/tests/test_mcp_server.py integrations/hermes/plugin/adapter.py
           bash -n integrations/hermes/setup.sh
 
       - name: Test loopback client restrictions and data access
