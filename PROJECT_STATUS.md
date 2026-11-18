@@ -1,5 +1,22 @@
 # Projektstatus — KOR-NEXUS
 
+Stand: 2026-11-18 · Version 1.20.0 · Schwerpunkt: Hermes-Integration auf `transfer/hermes-integration`
+
+## Feature-Branch — KOR-NEXUS × Hermes (nicht veröffentlicht)
+
+- [x] MCP-Server mit lesenden Werkzeugen und getrenntem Python-Environment ergänzt.
+- [x] Lokale Bearer-Token-Bridge mit Loopback-Bindung und SQLite-Nachrichtenwarteschlange ergänzt.
+- [x] Hermes-Community-Plattformplugin für den zusätzlichen `kor_nexus`-Kanal ergänzt.
+- [x] Eigene Hermes-Chat-Oberfläche und Navigationseinstieg im KOR-NEXUS-HUD ergänzt.
+- [x] Setup-Skript erzeugt/erhält den privaten Token, installiert den MCP-Server und das Plattformplugin und lässt bestehende `config.yaml`-Einträge unangetastet.
+- [x] Benutzerinstallation, Arch-Paketdefinition, Quellverifikation und Paket-Installationsprüfungen um Hermes-Artefakte ergänzt.
+- [x] Regressionstest für Tokenprüfung sowie Ein-/Ausgangsnachrichten in der lokalen Bridge ergänzt.
+- [ ] GitHub-Actions-Läufe für den aktuellen Branch müssen erfolgreich abgeschlossen werden.
+- [ ] Plattformplugin gegen eine reale Hermes-Gateway-Installation mit KOR-NEXUS auf demselben Benutzerkonto prüfen.
+- [ ] KOR-NEXUS-Chat, MCP-Werkzeuge und bestehende externe Hermes-Kanäle im Zielsystem gemeinsam verifizieren.
+- [ ] Review und Merge erst nach grünen CI-Gates; `main` wurde nicht direkt verändert.
+
+
 Stand: 2026-10-22 · Version 1.20.0 · Schwerpunkt: GitHub Development Center und Repository-Verifikation
 
 ## Feature-Branch — GitHub Development Center (nicht veröffentlicht)
