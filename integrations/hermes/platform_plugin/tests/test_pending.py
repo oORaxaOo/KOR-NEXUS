@@ -88,10 +88,13 @@ def install_minimal_hermes_stubs():
 
 install_minimal_hermes_stubs()
 from gateway.config import PlatformConfig
-from adapter import KORNexusAdapter, ProcessingOutcome
+from adapter import KORNexusAdapter, ProcessingOutcome, MAX_BODY_BYTES, MAX_MESSAGE_CHARS
 
 
 class PendingReplyTests(unittest.TestCase):
+    def test_http_body_limit_accepts_maximum_utf8_message(self):
+        self.assertGreaterEqual(MAX_BODY_BYTES, MAX_MESSAGE_CHARS * 4 + 1024)
+
     def setUp(self):
         self.adapter = object.__new__(KORNexusAdapter)
         self.adapter._pending = {}
