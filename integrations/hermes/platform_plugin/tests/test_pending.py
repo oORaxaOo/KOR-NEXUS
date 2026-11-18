@@ -114,6 +114,11 @@ class PendingReplyTests(unittest.TestCase):
         self.assertTrue(self.adapter._resolve_message("message-id", "reply"))
         self.assertEqual(future.result(), "reply")
 
+    def test_dispatch_uses_hermes_synchronous_handle_message(self):
+        event = types.SimpleNamespace(_gateway_accepted=False)
+        asyncio.run(self.adapter._dispatch(event))
+        self.assertTrue(event._gateway_accepted)
+
     def test_cleanup_removes_pending_entry_and_queue_member(self):
         future = Future()
         self.adapter._pending = {"message-id": future}
