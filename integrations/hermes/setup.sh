@@ -68,11 +68,16 @@ try:
 except OSError:
     pass
 token_file = data_home / "hermes-bridge-token"
-if token_file.is_file():
-    token = token_file.read_text(encoding="utf-8").strip()
-else:
+token = token_file.read_text(encoding="utf-8").strip() if token_file.is_file() else ""
+if not token:
     token = secrets.token_urlsafe(32)
-    token_file.write_text(token + "\n", encoding="utf-8")
+    temporary_token = token_file.with_name(token_file.name + ".partial")
+    temporary_token.write_text(token + "\n", encoding="utf-8")
+    try:
+        os.chmod(temporary_token, 0o600)
+    except OSError:
+        pass
+    temporary_token.replace(token_file)
 try:
     os.chmod(token_file, 0o600)
 except OSError:
