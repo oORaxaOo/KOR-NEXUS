@@ -64,6 +64,8 @@ gateway:
       enabled: true
       extra:
         port: 9876
+        allowed_users:
+          - local-owner
 YAML
 
 echo
