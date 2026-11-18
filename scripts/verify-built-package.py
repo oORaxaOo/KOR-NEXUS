@@ -24,10 +24,14 @@ for expected in (
     "opt/kor-workstation/web/github.html",
     "opt/kor-workstation/web/js/github-center.js",
     "opt/kor-workstation/web/geodata/world.geojson",
+    "opt/kor-workstation/integrations/hermes/mcp_server.py",
+    "opt/kor-workstation/integrations/hermes/kor_client.py",
+    "opt/kor-workstation/integrations/hermes/requirements.txt",
+    "opt/kor-workstation/integrations/hermes/setup.sh",
     "usr/bin/kor-workstation",
     "usr/bin/kor-workstation-stop",
     "usr/share/applications/kor-workstation.desktop",
 ):
     if expected not in listing:
         raise SystemExit(f"Package file missing: {expected}")
-print(f"OK package metadata and payload: {pkg}")
+print(f"OK package metadata, KOR payload and optional Hermes MCP files: {pkg}")
