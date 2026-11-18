@@ -8,7 +8,9 @@ register(ctx)) and does not patch Hermes core files.
 
 1. KOR-NEXUS writes a user's chat message to its local SQLite queue.
 2. The plugin polls the authenticated loopback bridge and forwards the message
-   into the normal Hermes Gateway message handler.
+   into the normal asynchronous Hermes Gateway message handler. It acknowledges
+   the queue item only after the gateway reports that it accepted the event;
+   failed admissions remain queued for retry.
 3. Hermes processes the turn using its normal tools, skills, model/provider and
    existing platform routing.
 4. The plugin's send() callback writes the assistant reply into the matching
