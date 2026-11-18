@@ -12,7 +12,7 @@ KOR-NEXUS bleibt ohne Hermes vollständig funktionsfähig. Das Plugin verändert
 - \`mcp_server.py\` stellt die MCP-Werkzeuge über STDIO bereit. Hermes startet den Prozess lokal; es wird kein zusätzlicher Netzwerk-Port geöffnet.
 - \`kor_client.py\` spricht ausschließlich die bestehende KOR-NEXUS-HTTP-API an. Direkter SQLite-Zugriff ist ausgeschlossen.
 - \`plugin/adapter.py\` registriert über die unterstützte Hermes-Community-Plugin-Schnittstelle den Plattformkanal \`kor_nexus\`.
-- KOR-NEXUS speichert Nachrichten lokal in zwei zusätzlichen SQLite-Tabellen. Das Gateway fragt die eingehende Warteschlange über einen privaten Bridge-Endpunkt ab und schreibt Antworten zurück.
+- KOR-NEXUS speichert Nachrichten lokal in zwei zusätzlichen SQLite-Tabellen. Das Gateway fragt die eingehende Warteschlange über einen privaten Bridge-Endpunkt ab; erst nach bestätigter Annahme durch den Hermes-Gateway-Handler wird die Nachricht quittiert. Bei fehlgeschlagener Übergabe bleibt sie erneut abrufbar. Antworten werden zurückgeschrieben.
 - Die lokale Chat-Oberfläche liegt unter \`web/hermes.html\`; in der KOR-NEXUS-Kopfzeile gibt es den Einstieg **⌘ HERMES**.
 
 ## Sicherheitsgrenzen
