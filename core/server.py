@@ -833,6 +833,28 @@ class AppHandler(BaseHTTPRequestHandler):
             with db_connect() as con:
                 row=con.execute('SELECT COUNT(*) n FROM hermes_messages WHERE direction=\'user\' AND status=\'queued\'').fetchone()
             return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'queued_messages':row['n']})
+        if path=='/api/hermes/bridge/ack':
+            if not self.hermes_bridge_authorized():
+                return self.fail(401,'Hermes-Bridge nicht autorisiert.')
+            try:
+                data=self.read_body()
+            except ValueError as exc:
+                return self.fail(400,str(exc))
+            message_ids=data.get('message_ids')
+            if not isinstance(message_ids,list) or not 1<=len(message_ids)<=20:
+                return self.fail(400,'Erwartet wird eine Liste mit 1 bis 20 Nachrichten-IDs.')
+            normalized=[]
+            for message_id in message_ids:
+                value=str(message_id).strip()
+                if not re.fullmatch(r'[a-f0-9]{32}',value):
+                    return self.fail(400,'Ungültige Nachrichten-ID.')
+                if value not in normalized:
+                    normalized.append(value)
+            now=utcnow()
+            with _db_lock, db_connect() as con:
+                con.executemany("UPDATE hermes_messages SET status='delivered',delivered_at=? WHERE id=? AND direction='user' AND status='queued'",[(now,message_id) for message_id in normalized])
+                acknowledged=con.execute("SELECT COUNT(*) n FROM hermes_messages WHERE id IN ("+','.join('?' for _ in normalized)+") AND direction='user' AND status='delivered'",normalized).fetchone()['n']
+            return self.send_json({'ok':True,'acknowledged':acknowledged,'message_ids':normalized})
         if path=='/api/hermes/bridge/inbox':
             try:
                 limit=max(1,min(20,int(q.get('limit',['10'])[0])))
@@ -843,10 +865,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 con.execute('BEGIN IMMEDIATE')
                 rows=con.execute("SELECT id,conversation_id,content,sender_id,sender_name,created_at FROM hermes_messages WHERE direction='user' AND status='queued' ORDER BY created_at,rowid LIMIT ?",(limit,)).fetchall()
                 messages=[dict(row) for row in rows]
-                if messages:
-                    ids=[row['id'] for row in messages]
-                    con.executemany("UPDATE hermes_messages SET status='delivered',delivered_at=? WHERE id=?",[(now,message_id) for message_id in ids])
                 con.execute('UPDATE hermes_bridge_state SET last_seen_at=?,last_error=NULL WHERE id=1',(now,))
+            # Messages remain queued until Hermes confirms admission through /bridge/ack.
             return self.send_json({'items':messages,'count':len(messages)})
         if path == '/api/ide/status':
             roots = _ide_workspace_roots()
