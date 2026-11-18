@@ -63,3 +63,57 @@ Listenwerkzeuge liefern höchstens 200 Einträge; Ereignisabfragen höchstens 50
     PYTHONPATH=integrations/hermes/mcp_server python3 -m unittest discover -s integrations/hermes/mcp_server/tests -v
     python3 -m py_compile integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py
     bash -n integrations/hermes/install.sh
+
+
+## Vollständige HUD- und Kanalintegration (Variante C)
+
+Der Installer richtet zusätzlich das native Hermes-Gateway-Platform-Plugin ein:
+
+    ~/.hermes/plugins/kor-nexus-panel/
+
+Das Plugin ergänzt Hermes um die Plattform kor_nexus. Nachrichten aus dem KOR-NEXUS-HUD werden dadurch über denselben GatewayRunner und denselben aktiven Lilith-Agenten verarbeitet wie WhatsApp, Discord und andere bereits verbundene Hermes-Kanäle. Der Chat-Sitzungsschlüssel des HUD bleibt separat; die Agentenidentität, Werkzeugfreigaben und das Hermes-Langzeitgedächtnis bleiben gemeinsam.
+
+### Hermes-Konfiguration ergänzen
+
+Die vom Installer erzeugte hermes-platform-config.yaml enthält:
+
+    gateway:
+      platforms:
+        kor_nexus:
+          enabled: true
+          extra:
+            port: 9876
+
+Diesen Abschnitt in den bestehenden gateway.platforms-Block der ~/.hermes/config.yaml übernehmen. Den bereits vorhandenen Block nicht überschreiben oder ein zweites gateway:-Element anlegen. Zusätzlich den MCP-Eintrag aus hermes-mcp-config.yaml unter den vorhandenen mcp_servers:-Abschnitt übernehmen.
+
+Anschließend das Hermes-Gateway neu starten. Beim erfolgreichen Start erzeugt das Plugin eine private Verbindungsdatei unter $XDG_CONFIG_HOME/kor-nexus/hermes-bridge.json (Standard: ~/.config/kor-nexus/hermes-bridge.json). Sie enthält ein zufälliges Zugriffstoken und wird mit Dateirechten 0600 geschrieben. Das Verzeichnis wird auf 0700 gesetzt. KOR-NEXUS liest diese Datei serverseitig; das Token wird niemals an den Browser ausgeliefert.
+
+Hermes und KOR-NEXUS müssen dasselbe HOME/XDG_CONFIG_HOME verwenden. Bei abweichender Konfiguration kann KOR_NEXUS_HERMES_CONFIG auf beiden Prozessen auf denselben privaten Dateipfad gesetzt werden.
+
+### Eingebettetes Chatfenster
+
+Im KOR-NEXUS-HUD erscheint die Schaltfläche LILITH. Das Fenster verwendet:
+
+- eine eigene HUD-Sitzung pro Browser-Profil;
+- dieselbe Hermes-Gateway-Instanz und dieselbe Lilith-Agentenkonfiguration;
+- die gleiche MCP-Werkzeugfreigabe wie andere Hermes-Kanäle;
+- eine lokale, authentifizierte HTTP-Bridge zwischen KOR-NEXUS-Backend und Hermes-Plugin.
+
+Der Browser kommuniziert nur mit der bestehenden KOR-NEXUS-API. Er erhält weder den Plugin-Port noch das Zugriffstoken. Chatnachrichten sind auf 12.000 Zeichen begrenzt; maximal acht gleichzeitige HUD-Anfragen werden angenommen. Antworten werden derzeit als vollständige Nachricht übergeben; Streaming-Text und proaktive Ereigniszustellung gehören zu einer späteren Ausbaustufe.
+
+### Betriebsgrenzen der ersten Hybrid-Version
+
+- KOR-NEXUS bleibt ohne Hermes voll funktionsfähig.
+- Das MCP-Toolset ist read-only. Es greift nur über die KOR-NEXUS-API zu und kann keine Datenbankänderungen ausführen.
+- Der Platform-Adapter leitet Chatnachrichten an Hermes weiter. Er führt selbst keine KOR-NEXUS-Datenbankoperationen aus.
+- Die aktuelle Event-Journal-Funktion kann von Lilith abgefragt werden (kor_get_events). Automatische Push-Benachrichtigungen aus KOR-NEXUS an WhatsApp/HUD sind noch nicht aktiviert.
+- Kritische KOR-Aktionen bleiben den vorhandenen Bestätigungsmechanismen der Core Engine unterworfen.
+
+### Diagnose
+
+- Hermes Plugin prüfen: hermes plugins list
+- MCP-Verbindung prüfen: hermes mcp test kor_nexus
+- KOR-NEXUS-Verbindungsstatus: GET /api/lilith/status
+- KOR-NEXUS-Chat: POST /api/lilith/message mit JSON-Feldern session_id und message
+
+Der Installer kopiert das Plugin nach ~/.hermes/plugins/kor-nexus-panel/ und erzeugt Konfigurationsvorlagen, bearbeitet ~/.hermes/config.yaml aber nicht automatisch.
