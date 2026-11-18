@@ -7,6 +7,7 @@ on:
       - "integrations/hermes/**"
       - "integrations/__init__.py"
       - "tests/test_hermes_mcp_client.py"
+      - "tests/test_hermes_plugin_contract.py"
       - ".github/workflows/hermes-mcp.yml"
   pull_request:
     paths:
@@ -47,6 +48,9 @@ jobs:
 
       - name: Test loopback client restrictions and data access
         run: python -m unittest -v tests.test_hermes_mcp_client
+
+      - name: Check Hermes platform adapter contract
+        run: python -m unittest -v tests.test_hermes_plugin_contract
 
       - name: Test MCP protocol registration and tool calls
         env:
