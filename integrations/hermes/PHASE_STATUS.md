@@ -6,7 +6,7 @@ Zielbranch: transfer/kor-nexus-1.20.0
 
 ## Implementiert
 
-- Optionaler MCP-Server über STDIO mit acht lesenden KOR-NEXUS-Werkzeugen.
+- Optionaler MCP-Server über STDIO mit acht lesenden Werkzeugen sowie vier begrenzten Werkzeugen zum Erstellen/Bearbeiten von Aufgaben und strukturierten Einträgen.
 - Loopback-only API-Client; keine direkten SQLite-, Shell- oder Dateisystemwerkzeuge.
 - Native Hermes-Gateway-Plattform `kor_nexus` für Nachrichten aus dem KOR-NEXUS-HUD.
 - Eingebettetes Lilith-Chatfenster mit eigener Browsersitzung und Statusanzeige.
@@ -17,7 +17,7 @@ Zielbranch: transfer/kor-nexus-1.20.0
 ## Noch nicht Bestandteil dieser Ausbaustufe
 
 - Proaktive Ereignis-Pushmeldungen aus dem KOR-NEXUS Event Journal an WhatsApp, Discord oder das HUD.
-- Schreibende MCP-Werkzeuge und kontrollierte KOR-Aktionen über Lilith.
+- Kritische Aktionen wie Ressourcenbewegungen, Import/Restore oder Datenbanklöschungen über Lilith.
 - Token-/Sitzungsverwaltung für mehrere lokale Benutzer.
 
 Diese Funktionen bleiben als nächste Ausbaustufe vorgesehen. Die vorhandenen Sicherheits- und Bestätigungsmechanismen des KOR-NEXUS-Kerns werden nicht umgangen.
