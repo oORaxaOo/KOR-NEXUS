@@ -36,7 +36,8 @@ class HermesPlatformContractTests(unittest.TestCase):
         self.assertIn('Authorization": f"Bearer {self.token}"', self.source)
         self.assertIn("class _NoRedirect", self.source)
         self.assertIn('parsed.hostname not in {"127.0.0.1", "localhost", "::1"}', self.source)
-        self.assertIn('self._request_json, "POST", "/api/hermes/bridge/replies"', self.source)
+        normalized = " ".join(self.source.split())
+        self.assertIn('self._request_json, "POST", "/api/hermes/bridge/replies"', normalized)
 
     def test_platform_is_registered_as_a_separate_local_channel(self):
         self.assertIn('name="kor_nexus"', self.source)
