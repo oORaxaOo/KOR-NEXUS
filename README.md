@@ -28,6 +28,10 @@ Für eine benutzerspezifische Installation mit Anwendungsmenü:
 
 Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
 
+## Optionale Hermes-Integration
+
+KOR-NEXUS kann optional über einen lokalen MCP-Server mit Hermes Agent verbunden werden. Phase I stellt ausschließlich lesende Werkzeuge bereit und verwendet ausschließlich die lokale KOR-NEXUS-HTTP-API; direkter SQLite-Zugriff und Shell-Werkzeuge sind nicht Teil der Integration. Installation, Sicherheitsgrenzen und Tests stehen in `integrations/hermes/README.md`.
+
 ## Optionale lokale KI (llama.cpp)
 
 Die deterministische Kern-Engine benötigt keine KI. Der lokale KI-Assistent ist standardmäßig deaktiviert und kann nach erfolgreicher Stabilisierung des Kerns ausdrücklich aktiviert werden. Er liefert Beratungstexte, erhält keinen direkten Datenbank-Schreibzugriff und führt keine Aktionen aus. Prompts werden nicht an einen Cloud-Anbieter gesendet.
