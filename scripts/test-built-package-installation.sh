@@ -33,11 +33,11 @@ printf 'preserve-geo' > "$TMP/data/kor-workstation/geodata/preserve.geojson"
 chmod 600 "$TMP/data/kor-workstation/backups/preserve.sqlite3" "$TMP/data/kor-workstation/geodata/preserve.geojson"
 pacman -U --noconfirm "$PKG"
 # Verify installed paths, executable bits, desktop entry and offline map payload.
-for f in /opt/kor-workstation/core/server.py /opt/kor-workstation/core/engine.py /opt/kor-workstation/core/ai_provider.py /opt/kor-workstation/web/geodata/world.geojson /usr/bin/kor-workstation /usr/bin/kor-workstation-stop /usr/share/applications/kor-workstation.desktop; do
+for f in /opt/kor-workstation/core/server.py /opt/kor-workstation/core/engine.py /opt/kor-workstation/core/ai_provider.py /opt/kor-workstation/core/hermes_bridge.py /opt/kor-workstation/web/geodata/world.geojson /opt/kor-workstation/web/lilith.js /opt/kor-workstation/web/lilith.css /opt/kor-workstation/integrations/hermes/install.sh /opt/kor-workstation/integrations/hermes/mcp_server/server.py /opt/kor-workstation/integrations/hermes/platform_plugin/adapter.py /opt/kor-workstation/integrations/hermes/platform_plugin/plugin.yaml /usr/bin/kor-workstation /usr/bin/kor-workstation-stop /usr/share/applications/kor-workstation.desktop; do
   [[ -e "$f" ]] || { echo "Missing installed path: $f" >&2; exit 1; }
 done
 [[ -x /usr/bin/kor-workstation && -x /usr/bin/kor-workstation-stop ]]
-[[ -s /usr/share/applications/kor-workstation.desktop && -s /opt/kor-workstation/web/geodata/world.geojson ]]
+[[ -s /usr/share/applications/kor-workstation.desktop && -s /opt/kor-workstation/web/geodata/world.geojson && -s /opt/kor-workstation/web/lilith.js && -s /opt/kor-workstation/web/lilith.css ]]
 [[ "$(stat -c '%a' /usr/bin/kor-workstation)" == 755 ]]
 # Start using a dedicated unprivileged account and isolated XDG paths.
 runuser -u "$TEST_USER" -- env HOME="$TMP/home" XDG_DATA_HOME="$TMP/data" XDG_STATE_HOME="$TMP/state" KOR_NO_BROWSER=1 /usr/bin/kor-workstation &
