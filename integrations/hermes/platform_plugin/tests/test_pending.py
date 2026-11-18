@@ -44,7 +44,7 @@ def install_minimal_hermes_stubs():
         def build_source(self, **values):
             return types.SimpleNamespace(**values)
 
-        async def handle_message(self, message_event):
+        def handle_message(self, message_event):
             message_event._gateway_accepted = True
 
         def _mark_connected(self, **_kwargs):
@@ -67,7 +67,7 @@ def install_minimal_hermes_stubs():
     class ProcessingOutcome:
         FAILURE = "failure"
         CANCELLED = "cancelled"
-        COMPLETED = "completed"
+        SUCCESS = "success"
 
     config.Platform = Platform
     config.PlatformConfig = PlatformConfig
@@ -121,6 +121,13 @@ class PendingReplyTests(unittest.TestCase):
         self.adapter._cleanup_pending("message-id", "hud-session")
         self.assertNotIn("message-id", self.adapter._pending)
         self.assertEqual(list(self.adapter._pending_order.get("hud-session", ())), [])
+
+    def test_success_outcome_resolves_streamed_final_text(self):
+        future = Future()
+        self.adapter._pending = {"message-id": future}
+        event = types.SimpleNamespace(message_id="message-id", _streamed_final_response="Lilith-Antwort")
+        asyncio.run(self.adapter.on_processing_complete(event, types.SimpleNamespace(SUCCESS="success").SUCCESS))
+        self.assertEqual(future.result(), "Lilith-Antwort")
 
     def test_bridge_binds_loopback_and_requires_private_token(self):
         with tempfile.TemporaryDirectory() as tmp:
