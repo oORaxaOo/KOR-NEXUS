@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 command -v python3 >/dev/null 2>&1 || { echo 'Fehler: Python 3 fehlt.' >&2; exit 2; }
-python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/hermes_bridge.py core/test_server.py core/test_hermes_bridge.py integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py integrations/hermes/mcp_server/tests/test_kor_client.py integrations/hermes/platform_plugin/adapter.py integrations/hermes/platform_plugin/tests/test_pending.py web/lilith.js
+python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/hermes_bridge.py core/test_server.py core/test_hermes_bridge.py integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py integrations/hermes/mcp_server/tests/test_kor_client.py integrations/hermes/platform_plugin/adapter.py integrations/hermes/platform_plugin/tests/test_pending.py
 printf 'OK  Python-Syntax und Kernmodule\n'
 python3 - <<'PY'
 import json
