@@ -31,6 +31,8 @@ class HermesPlatformContractTests(unittest.TestCase):
             awaited,
             "Hermes BasePlatformAdapter.handle_message is async and must be awaited",
         )
+        self.assertIn('getattr(event, "_gateway_accepted", False)', self.source)
+        self.assertIn('"/api/hermes/bridge/ack"', self.source)
 
     def test_platform_adapter_uses_private_bridge_and_rejects_redirects(self):
         self.assertIn('Authorization": f"Bearer {self.token}"', self.source)
@@ -38,6 +40,7 @@ class HermesPlatformContractTests(unittest.TestCase):
         self.assertIn('parsed.hostname not in {"127.0.0.1", "localhost", "::1"}', self.source)
         normalized = " ".join(self.source.split())
         self.assertIn('self._request_json, "POST", "/api/hermes/bridge/replies"', normalized)
+        self.assertIn('self._request_json, "POST", "/api/hermes/bridge/ack"', normalized)
 
     def test_platform_is_registered_as_a_separate_local_channel(self):
         self.assertIn('name="kor_nexus"', self.source)
