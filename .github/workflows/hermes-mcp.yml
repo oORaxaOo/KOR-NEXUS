@@ -6,7 +6,7 @@ on:
     paths:
       - "integrations/hermes/**"
       - "integrations/__init__.py"
-      - "tests/test_hermes_mcp_client.py"
+      - "tests/test_hermes_mcp_client.py tests/test_hermes_plugin_contract.py"
       - "tests/test_hermes_plugin_contract.py"
       - ".github/workflows/hermes-mcp.yml"
   pull_request:
