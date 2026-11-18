@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from integrations.hermes.kor_client import KorNexusClient, KorNexusError, validate_loopback_url
+from integrations.hermes.kor_client import KorNexusClient, KorNexusError, default_data_home, validate_loopback_url
 
 
 class FakeKorHandler(BaseHTTPRequestHandler):
@@ -125,6 +125,14 @@ class KorNexusClientTests(unittest.TestCase):
         client = KorNexusClient(self.base_url, data_home=other)
         with self.assertRaises(KorNexusError):
             client.get_status()
+
+    def test_explicit_kor_nexus_data_home_overrides_xdg_default(self):
+        explicit = Path(self.temp.name) / "custom-kor-data"
+        with unittest.mock.patch.dict("os.environ", {
+            "KOR_NEXUS_DATA_HOME": str(explicit),
+            "XDG_DATA_HOME": str(Path(self.temp.name) / "other-xdg"),
+        }):
+            self.assertEqual(default_data_home(), explicit)
 
     def test_runtime_file_discovers_the_dynamic_kor_port(self):
         runtime = self.data_home / "runtime.json"
