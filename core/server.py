@@ -833,28 +833,6 @@ class AppHandler(BaseHTTPRequestHandler):
             with db_connect() as con:
                 row=con.execute('SELECT COUNT(*) n FROM hermes_messages WHERE direction=\'user\' AND status=\'queued\'').fetchone()
             return self.send_json({'ok':True,'app':APP_NAME,'version':VERSION,'queued_messages':row['n']})
-        if path=='/api/hermes/bridge/ack':
-            if not self.hermes_bridge_authorized():
-                return self.fail(401,'Hermes-Bridge nicht autorisiert.')
-            try:
-                data=self.read_body()
-            except ValueError as exc:
-                return self.fail(400,str(exc))
-            message_ids=data.get('message_ids')
-            if not isinstance(message_ids,list) or not 1<=len(message_ids)<=20:
-                return self.fail(400,'Erwartet wird eine Liste mit 1 bis 20 Nachrichten-IDs.')
-            normalized=[]
-            for message_id in message_ids:
-                value=str(message_id).strip()
-                if not re.fullmatch(r'[a-f0-9]{32}',value):
-                    return self.fail(400,'Ungültige Nachrichten-ID.')
-                if value not in normalized:
-                    normalized.append(value)
-            now=utcnow()
-            with _db_lock, db_connect() as con:
-                con.executemany("UPDATE hermes_messages SET status='delivered',delivered_at=? WHERE id=? AND direction='user' AND status='queued'",[(now,message_id) for message_id in normalized])
-                acknowledged=con.execute("SELECT COUNT(*) n FROM hermes_messages WHERE id IN ("+','.join('?' for _ in normalized)+") AND direction='user' AND status='delivered'",normalized).fetchone()['n']
-            return self.send_json({'ok':True,'acknowledged':acknowledged,'message_ids':normalized})
         if path=='/api/hermes/bridge/inbox':
             try:
                 limit=max(1,min(20,int(q.get('limit',['10'])[0])))
@@ -1581,4 +1559,26 @@ def main():
     except Exception:pass
     return 0
 
-if __name__=='__main__': raise SystemExit(main())
+if __name__=='__main__': raise SystemExit(main())        if path=='/api/hermes/bridge/ack':
+            if not self.hermes_bridge_authorized():
+                return self.fail(401,'Hermes-Bridge nicht autorisiert.')
+            try:
+                data=self.read_body()
+            except ValueError as exc:
+                return self.fail(400,str(exc))
+            message_ids=data.get('message_ids')
+            if not isinstance(message_ids,list) or not 1<=len(message_ids)<=20:
+                return self.fail(400,'Erwartet wird eine Liste mit 1 bis 20 Nachrichten-IDs.')
+            normalized=[]
+            for message_id in message_ids:
+                value=str(message_id).strip()
+                if not re.fullmatch(r'[a-f0-9]{32}',value):
+                    return self.fail(400,'Ungültige Nachrichten-ID.')
+                if value not in normalized:
+                    normalized.append(value)
+            now=utcnow()
+            with _db_lock, db_connect() as con:
+                con.executemany("UPDATE hermes_messages SET status='delivered',delivered_at=? WHERE id=? AND direction='user' AND status='queued'",[(now,message_id) for message_id in normalized])
+                acknowledged=con.execute("SELECT COUNT(*) n FROM hermes_messages WHERE id IN ("+','.join('?' for _ in normalized)+") AND direction='user' AND status='delivered'",normalized).fetchone()['n']
+            return self.send_json({'ok':True,'acknowledged':acknowledged,'message_ids':normalized})
+
