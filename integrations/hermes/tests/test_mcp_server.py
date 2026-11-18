@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 
 from mcp import Client
@@ -47,7 +48,7 @@ class HermesMcpServerTests(unittest.TestCase):
                 }.issubset(names))
                 response = await client.call_tool("kor_get_status", {})
                 self.assertFalse(response.is_error)
-                self.assertIn('"app":"KOR-NEXUS"', response.content[0].text)
+                self.assertEqual(json.loads(response.content[0].text)['app'], 'KOR-NEXUS')
 
         asyncio.run(exercise())
 
