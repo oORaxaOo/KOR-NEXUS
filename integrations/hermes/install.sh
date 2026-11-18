@@ -3,7 +3,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 SOURCE="$SCRIPT_DIR/mcp_server"
-DATA_HOME="\${XDG_DATA_HOME:-$HOME/.local/share}"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 TARGET="$DATA_HOME/kor-workstation/hermes-integration"
 
 command -v python3 >/dev/null 2>&1 || { echo 'FEHLER: python3 fehlt.' >&2; exit 2; }
