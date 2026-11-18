@@ -2,6 +2,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -128,7 +129,7 @@ class KorNexusClientTests(unittest.TestCase):
 
     def test_explicit_kor_nexus_data_home_overrides_xdg_default(self):
         explicit = Path(self.temp.name) / "custom-kor-data"
-        with unittest.mock.patch.dict("os.environ", {
+        with patch.dict("os.environ", {
             "KOR_NEXUS_DATA_HOME": str(explicit),
             "XDG_DATA_HOME": str(Path(self.temp.name) / "other-xdg"),
         }):
