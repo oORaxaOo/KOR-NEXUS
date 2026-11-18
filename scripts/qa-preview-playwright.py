@@ -263,12 +263,12 @@ with sync_playwright() as p:
   </script>"""
   hermes_html_source=hermes_html_source.replace(
     '<link rel="stylesheet" href="./styles.css">',
-    '<style>\\n'+css+'\\n</style>',1
+    '<style>\n'+css+'\n</style>',1
   )
-  hermes_html_source=hermes_html_source.replace('</head>',hermes_mock+'\\n</head>',1)
+  hermes_html_source=hermes_html_source.replace('</head>',hermes_mock+'\n</head>',1)
   hermes_html_source=hermes_html_source.replace(
     '<script src="./js/hermes.js" defer></script>',
-    '<script>\\n'+hermes_js_source+'\\n</script>',1
+    '<script>\n'+hermes_js_source+'\n</script>',1
   )
   hermes_page=browser.new_page(viewport={'width':1280,'height':900})
   hermes_page.on('pageerror',lambda e:errors.append('Hermes HUD: '+str(e)))
