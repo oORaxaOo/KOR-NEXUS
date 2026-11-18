@@ -88,12 +88,25 @@ class KorNexusClient:
             if payload is not None:
                 raise KorApiError("GET-Anfragen dürfen keine Schreibdaten enthalten.")
         elif method == "POST":
-            if path not in {"/api/tasks", "/api/records"}:
+            route = urllib.parse.urlsplit(path).path
+            allowed_fields = {
+                "/api/tasks": {"title", "area", "due_at", "priority", "estimated_minutes", "blocked_reason"},
+                "/api/records": {"module", "title", "body", "region", "tags"},
+            }.get(route)
+            if allowed_fields is None:
                 raise KorApiError("Dieser schreibende KOR-NEXUS-Endpunkt ist nicht freigegeben.")
+            if not isinstance(payload, dict) or not set(payload).issubset(allowed_fields):
+                raise KorApiError("Die KOR-NEXUS-Schreibdaten enthalten nicht freigegebene Felder.")
         elif method == "PATCH":
-            if not (re.fullmatch(r"/api/tasks/[1-9][0-9]*", path) or
-                    re.fullmatch(r"/api/records/[1-9][0-9]*", path)):
+            route = urllib.parse.urlsplit(path).path
+            if re.fullmatch(r"/api/tasks/[1-9][0-9]*", route):
+                allowed_fields = {"title", "area", "done", "due_at", "priority", "estimated_minutes", "actual_minutes", "blocked_reason"}
+            elif re.fullmatch(r"/api/records/[1-9][0-9]*", route):
+                allowed_fields = {"module", "title", "body", "region", "tags"}
+            else:
                 raise KorApiError("Dieser schreibende KOR-NEXUS-Endpunkt ist nicht freigegeben.")
+            if not isinstance(payload, dict) or not payload or not set(payload).issubset(allowed_fields):
+                raise KorApiError("Die KOR-NEXUS-Schreibdaten enthalten nicht freigegebene Felder oder sind leer.")
         else:
             raise KorApiError("Diese HTTP-Methode ist für die Integration nicht freigegeben.")
         data = None
