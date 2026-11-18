@@ -9,17 +9,19 @@ except ImportError as exc:
     raise SystemExit('Optionaler Test: Python Playwright fehlt. Die Anwendung selbst benötigt es nicht.') from exc
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML_SOURCE=ROOT/'web/index.html';CSS_SOURCE=ROOT/'web/styles.css';JS_SOURCE=ROOT/'web/app.js';SCREENSHOT=ROOT/'preview'/'smoke-test.png'
+HTML_SOURCE=ROOT/'web/index.html';CSS_SOURCE=ROOT/'web/styles.css';JS_SOURCE=ROOT/'web/app.js';LILITH_CSS_SOURCE=ROOT/'web/lilith.css';LILITH_JS_SOURCE=ROOT/'web/lilith.js';SCREENSHOT=ROOT/'preview'/'smoke-test.png'
 DESKTOP_SHOT=ROOT/'preview'/'hud-redesign-desktop.png'
 MOBILE_SHOT=ROOT/'preview'/'hud-redesign-mobile.png'
-html=HTML_SOURCE.read_text(encoding='utf-8');css=CSS_SOURCE.read_text(encoding='utf-8');js=JS_SOURCE.read_text(encoding='utf-8')
+html=HTML_SOURCE.read_text(encoding='utf-8');css=CSS_SOURCE.read_text(encoding='utf-8');js=JS_SOURCE.read_text(encoding='utf-8');lilith_css=LILITH_CSS_SOURCE.read_text(encoding='utf-8');lilith_js=LILITH_JS_SOURCE.read_text(encoding='utf-8')
 assert js.count('async function loadGeographicData()')==1, 'Geodaten-Lader darf nur einmal definiert sein'
 assert 'function mercatorY(lat)' in js and 'Math.atan(Math.sinh(y))' in js, 'Mercator-Projektion und inverse Koordinatenumrechnung müssen vorhanden sein'
 assert 'function filteredMapLocations()' in js and 'function exportAtlasCsv()' in js, 'Atlas muss gemeinsame Markerfilter und CSV-Export anbieten'
 assert 'function validateStateGeoJSON(geo)' in js, 'GeoJSON-Import muss vor dem Speichern validiert werden'
 assert 'id="mapLocFilterKind"' in html and 'id="exportAtlasCsv"' in html, 'Atlas-Werkzeuge müssen im UI vorhanden sein'
 html=html.replace('<link rel="stylesheet" href="./styles.css">',f'<style>\n{css}\n</style>',1)
+html=html.replace('<link rel="stylesheet" href="./lilith.css">',f'<style>\n{lilith_css}\n</style>',1)
 html=html.replace('<script src="./app.js" defer></script>','<!-- API mock is installed before the application script for isolated UI tests -->',1)
+html=html.replace('<script src="./lilith.js" defer></script>','<!-- Lilith client is embedded after the API mock -->',1)
 mock=r'''<script>
 const __state={stateGeo:null,tasks:[],records:[{id:900,module:'projects',title:'QA-existing-persisted-project',body:'Loaded from the mock database',region:'SYSTEM',tags:['persisted'],created_at:new Date().toISOString(),updated_at:new Date().toISOString()}],settings:{language:'de',backup_keep:'12',backup_interval_minutes:'30',event_retention_count:'100000',last_news_refresh:''},backups:[],news:[],sources:[],nextTask:1,nextRecord:1,nextBackup:1,units:[],resources:[],assignments:[],nextUnit:1,nextResource:1,nextAssignment:1,locations:[],nextLocation:1,engineRules:[],alerts:[],proposals:[],jobs:[],nextRule:1,nextProposal:1,nextJob:1,aiEnabled:false};
 window.confirm=()=>true;window.prompt=(message,defaultValue='')=>defaultValue;window.__qaRequests=[];
@@ -31,6 +33,8 @@ window.fetch=async (input,init={})=>{
  if(path==='/geodata/world.geojson')return res(__WORLD_GEOJSON__);
  if(path==='/geodata/germany-states'&&method==='GET')return res(__state.stateGeo?{available:true,geojson:__state.stateGeo,feature_count:__state.stateGeo.features.length}:{available:false,geojson:null,feature_count:0});
  if(path==='/geodata/germany-states'&&method==='POST'){__state.stateGeo=body.geojson;return res({ok:true,available:true,feature_count:body.geojson.features.length,recognized_state_names:body.geojson.features.length},201)}
+ if(path==='/lilith/status'&&method==='GET')return res({available:true,platform:'kor_nexus',agent:'Lilith',detail:'Hermes-Gateway verbunden.'});
+ if(path==='/lilith/message'&&method==='POST')return res({ok:true,response:'QA-Antwort von Lilith: '+String(body.message||'')});
  if(path==='/health')return res({ok:true,app:'KOR-NEXUS',version:'1.20.0',database:'SQLite',data_dir:'/mock/kor-workstation',backup_count:__state.backups.length,python:'3.13'});
  if(path==='/ai/status')return res({provider:__state.aiEnabled?'llama.cpp':'disabled',enabled:__state.aiEnabled,available:__state.aiEnabled,model_loaded:__state.aiEnabled,model_name:__state.aiEnabled?'qa-model.gguf':null,model_size_bytes:__state.aiEnabled?2048:null,available_memory_bytes:__state.aiEnabled?1024:null,memory_warning:__state.aiEnabled,reason:__state.aiEnabled?'Lokaler QA-Provider aktiv':'Lokale KI ist standardmäßig deaktiviert.'});
  if(path==='/ai/generate'&&method==='POST')return __state.aiEnabled?res({ok:true,provider:'llama.cpp',response:'QA-KI-Antwort: '+String(body.prompt||'')}):res({ok:false,error:'KI deaktiviert'},503);
@@ -89,7 +93,7 @@ local_storage_shim='''<script>
 const __qaStorage=new Map();
 Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>__qaStorage.has(k)?__qaStorage.get(k):null,setItem:(k,v)=>__qaStorage.set(k,String(v)),removeItem:k=>__qaStorage.delete(k),clear:()=>__qaStorage.clear()}});
 </script>'''
-html=html.replace('</body>',mock+'\n'+local_storage_shim+'\n<script>\n'+js+'\n</script>\n</body>',1)
+html=html.replace('</body>',mock+'\n'+local_storage_shim+'\n<script>\n'+js+'\n</script>\n<script>\n'+lilith_js+'\n</script>\n</body>',1)
 
 browser_path=os.environ.get('PLAYWRIGHT_CHROMIUM_PATH','/usr/bin/chromium');errors=[]
 with sync_playwright() as p:
@@ -114,6 +118,13 @@ with sync_playwright() as p:
    print('DIAGNOSTIC: browser_errors='+repr(errors))
    raise
   assert page.title()=='KOR-NEXUS // COMMAND NEXUS'
+  page.locator('#lilithOpen').click();page.locator('#lilithPanel').wait_for(state='visible')
+  page.locator('#lilithStatus').get_by_text('Hermes-Gateway verbunden.').wait_for(timeout=3000)
+  page.locator('#lilithInput').fill('QA-Verbindung prüfen')
+  page.locator('#lilithSend').click()
+  page.get_by_text('QA-Antwort von Lilith: QA-Verbindung prüfen').wait_for(timeout=3000)
+  page.keyboard.press('Escape');page.locator('#lilithPanel').wait_for(state='hidden')
+  print('PASS: eingebettetes Lilith-Panel, Statusabfrage, Nachrichtenversand, Antwortdarstellung und Schließen')
   assert page.locator('#nav button').count()==8
   assert page.locator('#stateGrid .state-button').count()==16
   page.locator('#commandPaletteBtn').click();page.locator('#commandPalette').wait_for(state='visible');page.locator('#commandSearch').fill('nachrichten');assert page.locator('#commandResults .command-result').count()>=1;assert 'NACHRICHTEN' in page.locator('#commandResults').inner_text();page.keyboard.press('Enter');page.wait_for_function("document.querySelector('#moduleTitle').textContent.includes('Nachrichten') || document.querySelector('#newsView').hidden===false",timeout=3000)

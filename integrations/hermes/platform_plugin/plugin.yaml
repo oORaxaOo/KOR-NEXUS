@@ -1,0 +1,17 @@
+name: kor-nexus-panel
+label: KOR-NEXUS
+kind: platform
+version: 0.1.0
+description: >
+  Local authenticated chat surface for the KOR-NEXUS HUD. Runs as a Hermes
+  Gateway platform plugin, so HUD messages use the same Lilith agent, tools,
+  memory and execution path as WhatsApp and other connected channels.
+  The bridge binds to 127.0.0.1 only and uses a private token file shared
+  with the local KOR-NEXUS backend. No internet-facing listener is created.
+author: KOR
+requires_env: []
+optional_env:
+  - name: KOR_NEXUS_PANEL_PORT
+    description: "Local KOR-NEXUS HUD bridge port (default 9876; use 0 for an OS-assigned port)."
+    prompt: "KOR-NEXUS HUD bridge port"
+    password: false

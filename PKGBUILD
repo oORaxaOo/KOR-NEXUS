@@ -14,12 +14,12 @@ sha256sums=('1489c6e83eba03e6856f04b39ce3ce1a20deca5e7b901f3b6ac0d30a19eb4ebb')
 
 build() {
   cd "$srcdir"
-  python -m py_compile core/server.py core/engine.py core/ai_provider.py
+  python -m py_compile core/server.py core/engine.py core/ai_provider.py core/hermes_bridge.py
 }
 
 check() {
   cd "$srcdir"
-  KOR_NO_BROWSER=1 python -m unittest -v core.test_server
+  KOR_NO_BROWSER=1 python -m unittest -v core.test_server core.test_hermes_bridge
   bash scripts/verify-source.sh
 }
 
@@ -28,11 +28,12 @@ package() {
   install -d "$pkgdir/opt/kor-workstation" "$pkgdir/usr/bin" \
     "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/scalable/apps" \
     "$pkgdir/usr/share/licenses/kor-workstation" "$pkgdir/usr/share/doc/kor-workstation"
-  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/scripts"
-  install -m644 core/server.py core/engine.py core/ai_provider.py core/__init__.py "$pkgdir/opt/kor-workstation/core/"
-  install -m644 web/index.html web/styles.css web/app.js "$pkgdir/opt/kor-workstation/web/"
+  install -d "$pkgdir/opt/kor-workstation/core" "$pkgdir/opt/kor-workstation/web/geodata" "$pkgdir/opt/kor-workstation/scripts" "$pkgdir/opt/kor-workstation/integrations"
+  install -m644 core/server.py core/engine.py core/ai_provider.py core/hermes_bridge.py core/__init__.py "$pkgdir/opt/kor-workstation/core/"
+  install -m644 web/index.html web/styles.css web/app.js web/lilith.css web/lilith.js "$pkgdir/opt/kor-workstation/web/"
   install -m644 web/geodata/world.geojson "$pkgdir/opt/kor-workstation/web/geodata/world.geojson"
   install -m644 scripts/setup-local-ai.sh "$pkgdir/opt/kor-workstation/scripts/setup-local-ai.sh"
+cp -a integrations/hermes "$pkgdir/opt/kor-workstation/integrations/hermes"
   install -m755 packaging/kor-workstation-launcher.sh "$pkgdir/usr/bin/kor-workstation"
   install -m755 packaging/kor-workstation-stop.sh "$pkgdir/usr/bin/kor-workstation-stop"
   install -m644 packaging/kor-workstation.desktop "$pkgdir/usr/share/applications/kor-workstation.desktop"

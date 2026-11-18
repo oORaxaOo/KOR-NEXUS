@@ -1,0 +1,104 @@
+/* Embedded Lilith console — KOR-NEXUS graphite / red / restrained gold */
+.lilith-launch{
+  display:inline-flex;align-items:center;gap:9px;min-height:36px;padding:0 13px;
+  border:1px solid #684044;border-radius:3px;background:linear-gradient(110deg,#481f24,#241518);
+  color:#f1e8e3;font-family:inherit;font-size:10px;font-weight:700;line-height:1.1;letter-spacing:.17em;cursor:pointer;
+  box-shadow:inset 0 1px #ffffff08,0 3px 12px #0004
+}
+.lilith-launch:hover{border-color:var(--gold);background:linear-gradient(110deg,#5a252b,#2c191c)}
+.lilith-spark{color:var(--gold);font-size:17px}
+.lilith-launch i,.lilith-status i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#7b5558;box-shadow:0 0 0 3px #7b555822}
+.lilith-launch i.is-online,.lilith-status.is-online i{background:#82bd94;box-shadow:0 0 0 3px #82bd9422}
+.lilith-launch i.is-offline,.lilith-status.is-offline i{background:#c88768;box-shadow:0 0 0 3px #c8876822}
+.lilith-backdrop[hidden]{display:none}
+.lilith-backdrop{
+  position:fixed;inset:0;z-index:12000;display:flex;justify-content:flex-end;
+  background:#050708b8;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)
+}
+.lilith-window{
+  display:flex;flex-direction:column;width:min(620px,100%);height:100%;min-height:0;
+  background:linear-gradient(155deg,#171d20 0%,#0e1214 65%,#0b0e10 100%);
+  border-left:1px solid #4a3b3c;box-shadow:-22px 0 70px #0009;color:#edf0ef
+}
+.lilith-header{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px 24px 17px;
+  border-bottom:1px solid #333d40;background:linear-gradient(100deg,#22282a,#14191b)
+}
+.lilith-identity{display:flex;align-items:center;gap:14px;min-width:0}
+.lilith-emblem{
+  display:grid;place-items:center;flex:0 0 46px;height:46px;border:1px solid #925057;color:#d7b779;
+  background:radial-gradient(circle,#79343d40,transparent 72%);font-size:25px;text-shadow:0 0 18px #d34a4e55
+}
+.lilith-kicker{font-size:9px;letter-spacing:.19em;color:#b4a9a3}
+.lilith-header h2{margin:5px 0 7px;font-size:18px;letter-spacing:.13em;color:#f1e8e3}
+.lilith-header h2 span{color:#b56c68;font-size:11px}
+.lilith-status{display:flex;align-items:center;gap:8px;font-size:10px;color:#aaa;letter-spacing:.04em}
+.lilith-status i{width:6px;height:6px}
+.lilith-status.is-online{color:#a8c7ad}
+.lilith-status.is-offline{color:#c9a18e}
+.lilith-head-actions{display:flex;align-items:center;gap:9px}
+.lilith-quiet-button,.lilith-close{
+  border:1px solid #465052;background:#141a1c;color:#c2c9c7;border-radius:2px;cursor:pointer
+}
+.lilith-quiet-button{padding:9px 10px;font-size:9px;letter-spacing:.09em}
+.lilith-quiet-button:hover,.lilith-close:hover{border-color:var(--gold);color:#f0d5a0}
+.lilith-close{width:34px;height:34px;font-size:22px;line-height:1}
+.lilith-context-note{
+  padding:10px 24px;border-bottom:1px solid #283134;background:#101517;color:#a3adab;
+  font-size:9px;letter-spacing:.11em;line-height:1.6
+}
+.lilith-messages{flex:1;min-height:0;overflow:auto;padding:24px;display:flex;flex-direction:column;gap:15px;overscroll-behavior:contain}
+.lilith-welcome{
+  max-width:450px;margin:auto;padding:24px 25px;border:1px solid #374144;border-left:2px solid #a84a50;
+  background:linear-gradient(140deg,#1c2325,#111719);text-align:left;color:#c2cbca
+}
+.lilith-welcome-mark{display:block;color:var(--gold);font-size:24px;margin-bottom:11px}
+.lilith-welcome strong{display:block;color:#f0e7df;font-size:14px;letter-spacing:.06em}
+.lilith-welcome p{font-size:12px;line-height:1.7;color:#b6c0bf;margin:10px 0 0}
+.lilith-welcome p.lilith-small{font-size:10px;color:#899493}
+.lilith-message{max-width:88%;padding:12px 14px 13px;border:1px solid #384245;background:#161e20;box-shadow:0 6px 18px #0002}
+.lilith-message-user{align-self:flex-end;border-color:#654047;background:linear-gradient(145deg,#302024,#1b1719)}
+.lilith-message-assistant{align-self:flex-start;border-left:2px solid #b55b5c}
+.lilith-message-system{align-self:center;max-width:100%;border-style:dashed;background:#111719}
+.lilith-message.is-error{border-color:#8c5148}
+.lilith-message-label{margin-bottom:7px;color:#c89f70;font-size:9px;font-weight:700;letter-spacing:.16em}
+.lilith-message-user .lilith-message-label{color:#d18b8d}
+.lilith-message-body{font-size:13px;line-height:1.7;color:#e2e8e6;white-space:pre-wrap;overflow-wrap:anywhere}
+.lilith-message.is-pending .lilith-message-body{color:#abb7b5}
+.lilith-compose{padding:15px 20px 18px;border-top:1px solid #3c4648;background:#101517}
+.lilith-compose textarea{
+  display:block;width:100%;min-height:70px;max-height:180px;resize:vertical;padding:13px 14px;
+  border:1px solid #465153;border-radius:2px;background:#0c1113;color:#edf0ef;
+  font:inherit;font-size:13px;line-height:1.6;outline:none
+}
+.lilith-compose textarea:focus{border-color:#a65b60;box-shadow:0 0 0 2px #a65b6020}
+.lilith-compose textarea::placeholder{color:#788482}
+.lilith-compose-footer{display:flex;align-items:center;gap:13px;padding-top:11px}
+#lilithInputCount{font-size:10px;color:#899391;white-space:nowrap}
+#lilithInputCount.is-over-limit{color:#e28d7c}
+.lilith-compose-hint{margin-left:auto;color:#83908e;font-size:9px;letter-spacing:.03em}
+.lilith-send{display:inline-flex;align-items:center;gap:13px;padding:10px 13px;border:1px solid #925058;border-radius:2px;background:#692d34;color:#fff;font-size:10px;font-weight:700;letter-spacing:.14em;cursor:pointer}
+.lilith-send b{font-size:15px;color:#e4c888}
+.lilith-send:hover:not(:disabled){background:#853b43;border-color:#c5a36c}
+.lilith-send:disabled{opacity:.42;cursor:not-allowed}
+body.lilith-open{overflow:hidden}
+@media(max-width:720px){
+  .lilith-launch{padding:0 9px;letter-spacing:.08em}
+  .lilith-backdrop{background:#080a0bf0}
+  .lilith-window{width:100%;border-left:0}
+  .lilith-header{padding:16px 14px 13px;gap:8px}
+  .lilith-emblem{flex-basis:38px;height:38px}
+  .lilith-header h2{font-size:15px}
+  .lilith-kicker{font-size:8px}
+  .lilith-quiet-button{padding:8px 7px;font-size:8px}
+  .lilith-messages{padding:16px 12px}
+  .lilith-message{max-width:94%}
+  .lilith-context-note{padding:9px 14px;font-size:8px}
+  .lilith-compose{padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+  .lilith-compose-hint{display:none}
+}
+
+.sr-only{
+  position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;
+  overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important
+}

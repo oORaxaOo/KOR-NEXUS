@@ -26,19 +26,21 @@ for file,pattern in checks.items():
  if file=='core/test_server.py' and text.count(v)<2: raise SystemExit('FEHLER: API-Test-Fixtures enthalten uneinheitliche Versionsangaben')
 print(f'OK Versionskonsistenz: {v}')
 PY
-python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/test_server.py scripts/qa-preview-playwright.py scripts/create-source-archive.py
-bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/setup-local-ai.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh
-if command -v node >/dev/null 2>&1; then node --check web/app.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
+python3 -m py_compile core/server.py core/engine.py core/ai_provider.py core/hermes_bridge.py core/test_server.py core/test_hermes_bridge.py scripts/qa-preview-playwright.py scripts/create-source-archive.py integrations/hermes/mcp_server/kor_client.py integrations/hermes/mcp_server/server.py integrations/hermes/mcp_server/tests/test_kor_client.py integrations/hermes/platform_plugin/__init__.py integrations/hermes/platform_plugin/adapter.py integrations/hermes/platform_plugin/tests/test_pending.py
+bash -n launch.sh stop.sh install-user.sh uninstall-user.sh scripts/setup-local-ai.sh scripts/build-arch-package.sh scripts/test-installation.sh scripts/verify-source.sh scripts/release-check.sh scripts/ci.sh scripts/test-built-package-installation.sh packaging/kor-workstation-launcher.sh packaging/kor-workstation-stop.sh integrations/hermes/install.sh
+if command -v node >/dev/null 2>&1; then node --check web/app.js; node --check web/lilith.js; echo 'OK JavaScript-Syntax'; else echo 'WARN node fehlt; JavaScript-Syntaxprüfung übersprungen'; fi
 bash scripts/verify-source.sh
+PYTHONPATH=integrations/hermes/mcp_server python3 -m unittest discover -s integrations/hermes/mcp_server/tests -v
+PYTHONPATH=integrations/hermes/platform_plugin python3 -m unittest discover -s integrations/hermes/platform_plugin/tests -v
 # Validate the file set required by PKGBUILD before packaging.
 python3 - <<'PYFILES'
 from pathlib import Path
 required = [
- 'core/server.py','core/engine.py','core/ai_provider.py','core/__init__.py','web/index.html','web/styles.css','web/app.js',
+ 'core/server.py','core/engine.py','core/ai_provider.py','core/hermes_bridge.py','core/__init__.py','web/index.html','web/styles.css','web/lilith.css','web/lilith.js','web/app.js',
  'web/geodata/world.geojson','packaging/kor-workstation-launcher.sh',
  'packaging/kor-workstation-stop.sh','packaging/kor-workstation.desktop',
  'packaging/icons/kor-workstation.svg','LICENSE','README.md','EXPORT_SCHEMA.md',
- 'DECISIONS.md','PROJECT_STATUS.md','CHANGELOG.md','scripts/ci.sh','scripts/setup-local-ai.sh','scripts/test-built-package-installation.sh'
+ 'DECISIONS.md','PROJECT_STATUS.md','CHANGELOG.md','scripts/ci.sh','scripts/setup-local-ai.sh','scripts/test-built-package-installation.sh','integrations/hermes/README.md','integrations/hermes/install.sh','integrations/hermes/mcp_server/kor_client.py','integrations/hermes/mcp_server/server.py','integrations/hermes/mcp_server/requirements.txt','integrations/hermes/platform_plugin/adapter.py','integrations/hermes/platform_plugin/plugin.yaml'
 ]
 missing=[f for f in required if not Path(f).is_file()]
 if missing: raise SystemExit('FEHLER: Paketdateien fehlen: '+', '.join(missing))
@@ -59,14 +61,14 @@ v=sys.argv[1]; p=Path(f'kor-workstation-{v}.tar.gz')
 with tarfile.open(p,'r:gz') as t:
  bad=t.getmembers()
  names={m.name.lstrip('./') for m in bad}
- required={'PKGBUILD','core/server.py','core/engine.py','core/ai_provider.py','core/test_server.py','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/setup-local-ai.sh','scripts/test-built-package-installation.sh'}
+ required={'PKGBUILD','core/server.py','core/engine.py','core/ai_provider.py','core/hermes_bridge.py','core/test_server.py','core/test_hermes_bridge.py','web/lilith.js','web/lilith.css','web/geodata/world.geojson','scripts/verify-source.sh','scripts/release-check.sh','scripts/ci.sh','scripts/create-source-archive.py','scripts/verify-built-package.py','scripts/setup-local-ai.sh','scripts/test-built-package-installation.sh','integrations/hermes/mcp_server/server.py','integrations/hermes/platform_plugin/adapter.py'}
  missing=required-names
  if missing: raise SystemExit(f'FEHLER: Quellarchiv-Dateien fehlen: {sorted(missing)}')
  if t.getmembers() and any(m.mtime != 0 for m in t.getmembers()): raise SystemExit('FEHLER: Quellarchiv-Zeitstempel nicht deterministisch')
  print(f'OK Quellarchiv: {len(bad)} Einträge, erforderliche Dateien vorhanden, Zeitstempel normalisiert')
 PY
 if [[ "$MODE" != quick ]]; then
-  python3 -m unittest -v core.test_server
+  python3 -m unittest -v core.test_server core.test_hermes_bridge
   if python3 scripts/qa-preview-playwright.py; then echo 'OK Browser-Smoke-Test'; else echo 'FEHLER Browser-Smoke-Test' >&2; exit 1; fi
   bash scripts/test-installation.sh
 fi

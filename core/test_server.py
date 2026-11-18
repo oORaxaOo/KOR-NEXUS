@@ -939,6 +939,27 @@ class CoreApiTests(unittest.TestCase):
         self.assertEqual(self.req('/api/dashboard/projects?status=unbekannt')[1]['total'],1)
         self.assertIn('null bedeutet keine Werte',self.req('/api/dashboard/projects')[1]['semantics']['progress'])
 
+    def test_lilith_status_endpoint_reports_bridge_state_without_secrets(self):
+        status_payload={'available':True,'platform':'kor_nexus','agent':'Lilith','detail':'Hermes-Gateway verbunden.'}
+        with patch.object(app,'bridge_status',return_value=status_payload):
+            status,result=self.req('/api/lilith/status')
+        self.assertEqual(status,200)
+        self.assertEqual(result,status_payload)
+        self.assertNotIn('token',result)
+
+    def test_lilith_message_endpoint_validates_input_and_returns_agent_reply(self):
+        with patch.object(app,'send_to_hermes',return_value='Antwort aus Hermes') as send:
+            status,result=self.req('/api/lilith/message','POST',{'message':'Hallo Lilith','session_id':'hud-test'})
+        self.assertEqual(status,200)
+        self.assertEqual(result,{'ok':True,'response':'Antwort aus Hermes'})
+        send.assert_called_once_with('Hallo Lilith','hud-test')
+
+    def test_lilith_message_endpoint_rejects_invalid_session_and_empty_message(self):
+        with patch.object(app,'send_to_hermes') as send:
+            self.assertEqual(self.req('/api/lilith/message','POST',{'message':'Hallo','session_id':'../escape'})[0],400)
+            self.assertEqual(self.req('/api/lilith/message','POST',{'message':'   ','session_id':'hud-test'})[0],400)
+        send.assert_not_called()
+
     def test_host_header_and_cross_origin_mutations_are_rejected(self):
         req=Request(self.base+'/api/health',headers={'Host':'evil.example'})
         with self.assertRaises(HTTPError) as caught: urlopen(req,timeout=3)

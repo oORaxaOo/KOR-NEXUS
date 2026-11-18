@@ -28,6 +28,10 @@ Für eine benutzerspezifische Installation mit Anwendungsmenü:
 
 Der Kern nutzt Python 3 und SQLite; das Frontend besteht aus lokal geladenem HTML, CSS und JavaScript. Der Server bindet ausschließlich an `127.0.0.1`. Für den Benutzerstart sind weder Root-Rechte noch ein Cloud-Konto oder eine Frontend-Build-Kette erforderlich. Datenbank, Sicherungen und Laufzeitprotokolle liegen getrennt von den Programmdateien und bleiben bei der Deinstallation erhalten.
 
+## Optionale Hermes-Integration
+
+KOR-NEXUS kann optional vollständig mit Hermes Agent verbunden werden: Ein lokaler MCP-Server stellt lesende KOR-NEXUS-Werkzeuge bereit, ein Hermes-Gateway-Platform-Plugin bindet das Lilith-Chatfenster in das HUD ein. HUD, WhatsApp und weitere verbundene Kanäle verwenden dieselbe Hermes-Instanz; ihre Gesprächssitzungen bleiben getrennt. Die Integration verwendet ausschließlich die lokale KOR-NEXUS-HTTP-API und greift nicht direkt auf SQLite zu. Automatische Ereignis-Pushmeldungen und kontrollierte Schreibwerkzeuge sind weitere Ausbaustufen. Installation und Sicherheitsgrenzen stehen in `integrations/hermes/README.md`.
+
 ## Optionale lokale KI (llama.cpp)
 
 Die deterministische Kern-Engine benötigt keine KI. Der lokale KI-Assistent ist standardmäßig deaktiviert und kann nach erfolgreicher Stabilisierung des Kerns ausdrücklich aktiviert werden. Er liefert Beratungstexte, erhält keinen direkten Datenbank-Schreibzugriff und führt keine Aktionen aus. Prompts werden nicht an einen Cloud-Anbieter gesendet.
